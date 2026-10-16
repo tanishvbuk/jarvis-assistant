@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Jarvis widget</title>
+<!--
+  The desktop widget (served at /widget): the HUD's ring in a round window (the window itself is clipped to a circle).
+  The outer ring layers are the full HUD's (ticks, text ring, blocks, arrows, arcs: ring builders adapted from
+  A.L.I.C.E., MIT, see the licence in index.html); each is drawn once and then only CSS-rotated, so they cost almost
+  nothing. The clear disc in the middle holds the clock, weather, next event, top task and timers, or the reply while
+  Jarvis answers; behind them one small canvas draws a faint turning globe and the voice spokes.
+  The full HUD (/) opens on request (the chip, or "show me").
+  Everything that came from outside (event titles, task names) goes in with textContent only.
+-->
+<style>
+:root{--cy:#5fd8ff;--cy2:#3fb6dd;--dim:#2a86a8;--hot:#e4f9ff;--amb:#ffae3b;--bad:#ff7a6c;--bg:#02090d}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:var(--hot);
+  font:12px/1.3 Bahnschrift,"Segoe UI",sans-serif;user-select:none;-webkit-user-select:none}
+#drag{position:absolute;inset:0}
+#disc{position:absolute;inset:0;border-radius:50%;background:#02090d}
+#rig{position:absolute;inset:0;pointer-events:none}
+.layer{position:absolute;left:50%;top:50%}
+.layer canvas{display:block;width:100%;height:100%}
+.spin{animation-timing-function:linear;animation-iteration-count:infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes rotr{to{transform:rotate(-360deg)}}
+.think{display:none}
+body.thinking .think{display:block}
+#core{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+body.idle #rig{opacity:.85}
+body.paused .spin{animation-play-state:paused}
+#face{position:absolute;left:23%;right:23%;top:22%;bottom:22%;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;gap:3px;pointer-events:none;text-shadow:0 0 6px rgba(0,8,12,.95),0 1px 2px #000}
+.ln{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#clock{font-size:25px;letter-spacing:.06em;font-weight:300;line-height:1;text-shadow:0 0 14px rgba(95,216,255,.8),0 1px 2px #000}
+#date{font-size:8px;letter-spacing:.24em;color:var(--cy)}
+#sp{height:3px}
+#tube{display:flex;justify-content:center;flex-wrap:wrap;gap:3px;margin:1px 0}
+.pill{font-size:7.5px;letter-spacing:.08em;font-weight:700;border-radius:7px;padding:1px 6px;line-height:1.35;text-shadow:none;border:1px solid transparent}
+.pill.dis{box-shadow:0 0 0 1.5px var(--bad)}
+#tubenote{font-size:8px;letter-spacing:.06em}
+#idle{width:100%;font-size:9.5px}
+.k{color:var(--cy2);font-size:7.5px;letter-spacing:.16em;margin-right:4px}
+.bad{color:var(--bad)} .amb{color:var(--amb)}
+#state{font-size:7.5px;letter-spacing:.34em;color:var(--cy);display:none}
+#heard{font-size:8.5px;color:var(--cy);display:none;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#reply{font-size:10.5px;line-height:1.3;max-height:8.4em;overflow:hidden;display:none;user-select:text;word-break:break-word}
+body.talk #idle{display:none}
+body.talk #reply.on,body.talk #heard.on{display:block}
+body.talk:not(.idle) #state{display:block}
+#chip{pointer-events:auto;display:none;cursor:pointer;margin-top:4px;border:1px solid var(--cy);color:var(--cy);border-radius:10px;
+  padding:1px 8px;font-size:8px;letter-spacing:.2em;background:rgba(2,14,20,.7)}
+#chip.on{display:block}
+#chip:hover{background:rgba(95,216,255,.25)}
+#talk{position:absolute;left:24%;top:24%;right:24%;bottom:24%;border-radius:50%;cursor:pointer;touch-action:none}
+#menu{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;background:rgba(2,14,20,.98);
+  border:1px solid var(--cy2);border-radius:10px;padding:4px;z-index:9;white-space:nowrap}
+#menu.on{display:block}
+#menu div{padding:5px 14px;cursor:pointer;font-size:12px;letter-spacing:.06em;border-radius:5px}
+#menu div:hover{background:rgba(95,216,255,.2)}
+</style>
+</head>
+<body class="idle">
+<div id="drag" class="pywebview-drag-region"></div>
+<div id="disc"></div>
+<div id="rig"></div>
+<div id="talk" title="Hold to talk"></div>
+<div id="face">
+  <div id="state">STANDING BY</div>
+  <div id="heard"></div>
+  <div id="reply"></div>
+  <div id="idle">
+    <div class="ln" id="clock">--:--</div>
+    <div class="ln" id="date"></div>
+    <div id="sp"></div>
+    <div class="ln" id="wx"></div>
+    <div id="tube"></div>
+    <div class="ln" id="tubenote"></div>
+    <div class="ln" id="cal"></div>
+    <div class="ln" id="task"></div>
+    <div class="ln" id="timers"></div>
+  </div>
+  <div id="chip"></div>
+</div>
+<div id="menu"></div>
+<script>
+const $=s=>document.querySelector(s);
+const mk=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e};
+const api=(n,...a)=>{try{return window.pywebview.api[n](...a)}catch(_){}};
+const R=d=>d*Math.PI/180;
+
+/* ================= the HUD's rings (design units of the 800x800 original; U = px per unit) ================= */
+const D=Math.min(innerWidth,innerHeight)||320, U=D/790;
+const COL={cy:'#5fd8ff',cy2:'#3fb6dd',dim:'#2a86a8',hot:'#cff4ff',amb:'#ffae3b'};
+function ringC(c,r,o={}){c.save();c.globalAlpha=o.o??.6;c.strokeStyle=COL[o.s||'dim'];c.lineWidth=o.w||1;
+  if(o.dash)c.setLineDash(o.dash);c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.stroke();c.restore()}
+function ticks(c,r,n,len,o={}){c.save();c.globalAlpha=o.o??.55;c.strokeStyle=COL[o.s||'dim'];c.lineWidth=o.w||1;c.beginPath();
+  for(let i=0;i<n;i++){const a=R(i/n*360),L=(o.every&&i%o.every===0)?(o.longLen||len*2.2):len;
+    c.moveTo(Math.cos(a)*r,Math.sin(a)*r);c.lineTo(Math.cos(a)*(r+L),Math.sin(a)*(r+L))}
+  c.stroke();c.restore()}
+function arcs(c,r,segs,o={}){c.save();c.globalAlpha=o.o??.85;c.strokeStyle=COL[o.s||'cy'];c.lineWidth=o.w||2;
+  const st=360/segs,gp=o.gap??18,off=o.off||0;
+  for(let i=0;i<segs;i++){c.beginPath();c.arc(0,0,r,R(off+i*st+gp/2),R(off+(i+1)*st-gp/2));c.stroke()}
+  c.restore()}
+function blocks(c,r,n,o={}){const h=o.h||9,w=o.bw||5;c.save();c.fillStyle=COL[o.s||'cy'];
+  for(let i=0;i<n;i++){c.save();c.rotate(R(i/n*360));c.globalAlpha=(o.alt&&i%o.alt)?.18:(o.o??.75);
+    c.fillRect(-w/2,-r-h/2,w,h);c.restore()}
+  c.restore()}
+function arrows(c,r,n,o={}){const sz=o.sz||10;c.save();c.globalAlpha=o.o??.7;c.fillStyle=COL[o.s||'cy'];
+  for(let i=0;i<n;i++){c.save();c.rotate(R(i/n*360));c.beginPath();c.moveTo(-sz,-r);c.lineTo(sz,-r);c.lineTo(0,-r+sz*1.5);
+    c.closePath();c.fill();c.restore()}
+  c.restore()}
+function textRing(c,r,text){c.save();c.globalAlpha=.6;c.fillStyle=COL.cy2;c.font='13px Bahnschrift, sans-serif';
+  c.textAlign='center';c.textBaseline='middle';const step=R(1.55);
+  for(let i=0;i<text.length;i++){c.save();c.rotate(i*step);c.translate(0,-r);c.fillText(text[i],0,0);c.restore()}
+  c.restore()}
+// The HUD's outer layers; the inner ones are left out so the middle stays clear for the writing.
+// spin is seconds per turn (negative = anticlockwise); slow ones turn in steps (~12 a second) like the HUD's.
+const LAYERS=[
+  {r:372, glow:'cy', draw:c=>{ticks(c,366,144,6,{o:.5,every:12,longLen:16,s:'cy2'});ringC(c,358,{o:.5});ringC(c,314,{o:.5,dash:[2,9]})}},
+  {r:395, spin:240, draw:c=>textRing(c,388,'J.A.R.V.I.S.  ·  PERSONAL SYSTEMS  ·  LOCAL NODE 127.0.0.1  ·  VOICE INTERFACE  ·  ')},
+  {r:340, glow:'cy', spin:170, draw:c=>blocks(c,330,60,{h:10,bw:4,alt:3,o:.75})},
+  {r:310, glow:'hot', spin:-120, draw:c=>arrows(c,298,6,{sz:9,o:.9,s:'hot'})},
+  {r:352, glow:'amb', spin:-210, draw:c=>arcs(c,344,3,{w:6,gap:70,o:.65,s:'amb'})},
+  {r:290, glow:'cy', spin:95, draw:c=>ticks(c,278,180,6,{o:.4})},
+  {r:270, glow:'hot', spin:-64, draw:c=>arcs(c,264,5,{w:4,gap:26,o:.95,s:'hot'})},
+  {r:256, glow:'hot', spin:130, draw:c=>blocks(c,246,40,{h:14,bw:6,alt:2,o:.9,s:'hot'})},
+  {r:240, glow:'cy', draw:c=>{ringC(c,234,{o:.6})}},
+  {r:236, glow:'amb', spin:1.6, cls:'think', draw:c=>arcs(c,224,2,{w:4,gap:130,o:.95,s:'amb'})},
+  {r:236, glow:'amb', spin:-2.4, cls:'think', draw:c=>arcs(c,214,3,{w:2,gap:90,o:.7,s:'amb'})},
+];
+const GLOW={cy:'rgba(95,216,255,.85)',hot:'rgba(207,244,255,.9)',amb:'rgba(255,174,59,.8)'};
+const rig=$('#rig'), dpr=Math.min(2,window.devicePixelRatio||1);
+for(const L of LAYERS){
+  const px=Math.ceil(L.r*2*U*dpr), el=document.createElement('div'), cv=document.createElement('canvas');
+  el.className='layer '+(L.cls||'');el.style.width=el.style.height=(L.r*2*U)+'px';
+  el.style.marginLeft=el.style.marginTop=(-L.r*U)+'px';
+  cv.width=cv.height=px;const c=cv.getContext('2d'),k=px/(L.r*2);c.setTransform(k,0,0,k,px/2,px/2);
+  if(L.glow){c.shadowColor=GLOW[L.glow];c.shadowBlur=6*U*dpr}
+  L.draw(c);
+  if(L.spin){cv.className='spin';cv.style.animationName=L.spin<0?'rotr':'rot';cv.style.animationDuration=Math.abs(L.spin)+'s';
+    if(Math.abs(L.spin)>=30)cv.style.animationTimingFunction='steps('+Math.round(Math.abs(L.spin)*12)+')'}
+  el.appendChild(cv);rig.appendChild(el);
+}
+
+/* ================= the middle: a faint turning globe and the voice spokes (the only per-frame drawing) ================= */
+const ST={offline:['OFFLINE','#2a86a8',.1],idle:['STANDING BY','#3fb6dd',.25],listening:['LISTENING','#ffae3b',.8],
+  thinking:['THINKING','#5fd8ff',.55],speaking:['RESPONDING','#cff4ff',.9]};
+let state='offline', micLevel=0, voiceLevel=0, levelAt=0, paused=false, tmr=null, t0=performance.now(), spin=0, lastDraw=performance.now();
+const core=document.createElement('canvas');core.id='core';core.width=core.height=Math.ceil(D*dpr);rig.appendChild(core);
+const cx=core.getContext('2d'), K=core.width/790;
+const rgba=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`};
+function drawCore(now){
+  const dt=Math.min(.2,(now-lastDraw)/1000);lastDraw=now;
+  const col=ST[state][1], e=ST[state][2], t=(now-t0)/1000;
+  const lv=now-levelAt<250?(state==='listening'?micLevel:voiceLevel):0;
+  spin+=dt*(state==='thinking'?1.2:state==='idle'||state==='offline'?.12:.45+lv*.8);
+  cx.setTransform(1,0,0,1,0,0);cx.clearRect(0,0,core.width,core.height);
+  cx.setTransform(K,0,0,K,core.width/2,core.height/2);
+  const Rg=212;
+  // dark glass disc with a soft tint from the state colour
+  let g=cx.createRadialGradient(0,0,0,0,0,Rg);
+  g.addColorStop(0,rgba(col,.10+.16*e*(1+lv)));g.addColorStop(.7,rgba(col,.05+.05*e));g.addColorStop(1,'rgba(0,10,15,.85)');
+  cx.fillStyle=g;cx.beginPath();cx.arc(0,0,Rg,0,6.2832);cx.fill();
+  // globe wireframe, turning slowly
+  cx.save();cx.beginPath();cx.arc(0,0,Rg,0,6.2832);cx.clip();
+  cx.lineWidth=1.4;cx.strokeStyle=rgba('#cff4ff',.10+.06*e);
+  for(let k=0;k<6;k++){const rx=Math.abs(Math.cos(spin+k*Math.PI/6))*Rg;cx.beginPath();cx.ellipse(0,0,Math.max(.5,rx),Rg,0,0,6.2832);cx.stroke()}
+  for(const lat of [-60,-30,0,30,60]){const s=Math.sin(R(lat)),r=Rg*Math.cos(R(lat));cx.beginPath();cx.ellipse(0,Rg*s,r,r*.2,0,0,6.2832);cx.stroke()}
+  cx.restore();
+  // inner rim
+  cx.lineWidth=2;cx.strokeStyle=rgba(col,.5+.3*e);cx.beginPath();cx.arc(0,0,Rg,0,6.2832);cx.stroke();
+  // voice spokes: only while somebody is speaking or Jarvis is thinking
+  if(lv>.02||state==='thinking'){
+    const n=96;cx.lineWidth=3;cx.strokeStyle=rgba(col,.9);cx.beginPath();
+    for(let k=0;k<n;k++){const a=k/n*6.2832+spin*.4,r0=Rg+8,
+      len=state==='thinking'?4+4*Math.sin(t*5+k*.7):4+lv*(14+12*Math.sin(k*1.7+t*9));
+      cx.moveTo(Math.cos(a)*r0,Math.sin(a)*r0);cx.lineTo(Math.cos(a)*(r0+len),Math.sin(a)*(r0+len))}
+    cx.stroke()}
+}
+function loop(){
+  clearTimeout(tmr);
+  if(paused)return;
+  drawCore(performance.now());
+  tmr=setTimeout(loop,state==='idle'||state==='offline'?125:66);
+}
+function setState(s){
+  if(!ST[s])return;state=s;$('#state').textContent=ST[s][0];
+  document.body.classList.toggle('idle',s==='idle'||s==='offline');
+  document.body.classList.toggle('thinking',s==='thinking');
+  if(s==='listening')clearReply();
+  updateFace();loop();
+}
+window.hudPause=function(p){p=!!p;if(p===paused)return;paused=p;document.body.classList.toggle('paused',p);
+  send({t:'seen',v:!p});if(!p){lastDraw=performance.now();loop()}else clearTimeout(tmr)};
+document.addEventListener('visibilitychange',()=>window.hudPause(document.hidden));
+
+/* ================= what the middle shows: the info, or the reply while talking ================= */
+const replyEl=$('#reply');
+let replyTimer=null, chipTimer=null, chipCard=null;
+function talking(){return ['listening','thinking','speaking'].includes(state)||replyEl.classList.contains('on')}
+function updateFace(){document.body.classList.toggle('talk',talking())}
+function clearReply(){replyEl.textContent='';replyEl.classList.remove('on');$('#heard').classList.remove('on');updateFace()}
+function addSentence(t){clearTimeout(replyTimer);replyEl.textContent+=(replyEl.textContent?' ':'')+t;replyEl.classList.add('on');
+  // keep the newest words in view when a long answer outgrows the disc
+  while(replyEl.scrollHeight>replyEl.clientHeight+1&&replyEl.textContent.length>40){
+    const s=replyEl.textContent,cut=s.indexOf(' ',Math.min(60,Math.max(12,s.length>300?60:20)));if(cut<0)break;
+    replyEl.textContent='… '+s.slice(cut+1)}
+  updateFace()}
+function showHeard(t){const h=$('#heard');h.textContent='“'+t+'”';h.classList.add('on');updateFace()}
+function afterAnswer(){clearTimeout(replyTimer);replyTimer=setTimeout(clearReply,15000)}
+
+function clock(){const d=new Date();
+  $('#clock').textContent=d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  $('#date').textContent=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}
+setInterval(clock,5000);clock();
+
+/* ================= cards ================= */
+const NAMES={calendar:'CALENDAR',tasks:'TO DO',gym:'GYM',meals:'MEALS',mail:'MAIL',games:'GAMES',search:'SEARCH'};
+let timerItems=[];
+/* line colours by id (none built in); the text colour is picked for contrast */
+const TUBE={};
+function ink(hex){const n=parseInt(hex.slice(1),16),l=.299*(n>>16)+.587*(n>>8&255)+.114*(n&255);return l>150?'#101418':'#ffffff'}
+function wx(m){
+  const e=$('#wx');e.replaceChildren();
+  if(m.weather){const w=m.weather;e.appendChild(mk('span',w.rain>=50?'amb':null,w.temp+'° '+w.sky.toUpperCase()+(w.rain>=20?' · '+w.rain+'%':'')))}
+  const box=$('#tube'),note=$('#tubenote');box.replaceChildren();note.replaceChildren();
+  let worst=null;
+  for(const l of m.lines||[]){
+    const t=TUBE[l.id]||['#3fb6dd',(l.name||'').replace(/ line$/i,'').toUpperCase().slice(0,9)];
+    const closed=/closed/i.test(l.status||''), bad=!l.ok&&!closed;
+    const p=mk('span','pill'+(bad?' dis':''),t[1]+(bad?' !':''));
+    p.style.background=t[0];p.style.color=ink(t[0]);if(t[0]==='#000000')p.style.borderColor='#fff';
+    if(closed)p.style.opacity='.45';
+    p.title=(l.name||'')+': '+(l.status||'');box.appendChild(p);
+    if(bad&&!worst)worst={l,c:t[0]}}
+  if(worst){const n=mk('span',null,worst.l.status.toUpperCase());n.style.color=worst.c==='#000000'?'#fff':worst.c;note.appendChild(n)}
+}
+function cal(m){
+  const e=$('#cal');e.replaceChildren(mk('span','k','NEXT'));
+  if(m.error&&!(m.items||[]).length){e.appendChild(mk('span','bad',m.error));return}
+  const it=(m.items||[])[0];
+  e.appendChild(mk('span',null,it?it.time+'  '+it.title:'Nothing on'));
+}
+function task(m){
+  const e=$('#task');e.replaceChildren(mk('span','k','TO DO'));
+  if(m.error){e.appendChild(mk('span','bad',m.error));return}
+  const it=(m.items||[])[0];
+  if(!it){e.appendChild(mk('span',null,'All clear'));return}
+  e.appendChild(mk('span',it.late?'bad':null,it.title));
+}
+function leftText(due){
+  const left=Math.max(0,(new Date(due)-Date.now())/1000),h=Math.floor(left/3600),m=Math.floor(left%3600/60),s=Math.floor(left%60);
+  return left>=86400?new Date(due).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}).toUpperCase()
+    :h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`}
+function renderTimers(){
+  const e=$('#timers');e.replaceChildren();
+  if(!timerItems.length)return;
+  const t=timerItems[0];
+  e.appendChild(mk('span',null,(t.kind==='timer'?'⏱ ':'⏰ ')+(t.label||'').toUpperCase()+' '+leftText(t.due)+(timerItems.length>1?'  +'+(timerItems.length-1):'')));
+}
+setInterval(()=>{if(!paused&&timerItems.length&&!talking())renderTimers()},1000);
+function card(m){
+  switch(m.id){case 'localcard':wx(m);break;case 'calendar':cal(m);break;case 'tasks':task(m);break;
+    case 'timers':timerItems=m.items||[];renderTimers();break}
+}
+
+/* the chip: "CALENDAR >" opens the full HUD with that card */
+function showChip(id){
+  if(!NAMES[id])return;
+  chipCard=id;const c=$('#chip');c.textContent=NAMES[id]+' ›';c.classList.add('on');
+  clearTimeout(chipTimer);chipTimer=setTimeout(hideChip,60000);
+}
+function hideChip(){chipCard=null;$('#chip').classList.remove('on')}
+$('#chip').addEventListener('click',()=>{if(chipCard){send({t:'open',card:chipCard});hideChip()}});
+
+/* ================= link to Jarvis ================= */
+let ws=null, talkEnabled=false, held=false;
+function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function connect(){
+  ws=new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen=()=>{send({t:'seen',v:!paused})};
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}
+    switch(m.t){
+      case 'hello':
+        talkEnabled=!!m.talk;setState(m.state||'idle');
+        clearReply();(m.reply||[]).forEach(addSentence);
+        Object.values(m.cards||{}).forEach(card);break;
+      case 'state':setState(m.s);if(m.s==='idle')afterAnswer();break;
+      case 'heard':clearReply();hideChip();showHeard(m.text);break;
+      case 'say':addSentence(m.text);break;
+      case 'level':if(m.src==='mic')micLevel=m.v;else voiceLevel=m.v;levelAt=performance.now();break;
+      case 'card':card(m);break;
+      case 'focus':showChip(m.card);break;    // the widget never opens the HUD by itself; it offers
+      case 'briefing':break;                  // Jarvis opens the HUD for the morning briefing
+    }};
+  ws.onclose=()=>{setState('offline');releaseTalk();setTimeout(connect,2000)};
+  ws.onerror=()=>{try{ws.close()}catch(_){}};
+}
+
+/* hold the middle to talk; dragging the rings moves the window */
+const talk=$('#talk');
+function releaseTalk(){if(held){held=false;send({t:'talk',a:'up'})}}
+talk.addEventListener('pointerdown',e=>{
+  if(e.button!==0||!talkEnabled||held||!ws||ws.readyState!==1)return;
+  held=true;talk.setPointerCapture(e.pointerId);send({t:'talk',a:'down'})});
+['pointerup','pointercancel','lostpointercapture'].forEach(n=>talk.addEventListener(n,releaseTalk));
+addEventListener('blur',releaseTalk);
+
+/* right-click menu, in the middle */
+const menu=$('#menu');let topOn=false;
+function openMenu(){
+  menu.replaceChildren();
+  const items=[['Open the full HUD',()=>send({t:'open',card:chipCard||''})],
+    [topOn?'Stay on top: on':'Stay on top: off',async()=>{const r=await api('toggle_top');topOn=!!r}],
+    ['Hide  (Ctrl+Alt+J)',()=>api('hide')],
+    ['Quit Jarvis',()=>api('quit')]];
+  for(const [label,fn] of items){const d=mk('div',null,label);d.addEventListener('click',()=>{menu.classList.remove('on');fn()});menu.appendChild(d)}
+  menu.classList.add('on');
+}
+addEventListener('contextmenu',e=>{e.preventDefault();openMenu()});
+addEventListener('pointerdown',e=>{if(!menu.contains(e.target))menu.classList.remove('on')});
+addEventListener('keydown',e=>{if(e.key==='Escape')menu.classList.remove('on')});
+
+setState('offline');loop();connect();
+</script>
+</body>
+</html>

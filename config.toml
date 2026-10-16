@@ -1,0 +1,202 @@
+# Jarvis settings. Non-secret only: API keys go in .env.
+
+[llm]
+# Which [llm.providers.*] block to use: "groq", "openrouter" or "anthropic".
+provider = "groq"
+max_tokens = 200            # hard cap on each spoken reply
+max_tokens_with_data = 400  # cap for an answer built on fetched data (e.g. a list of emails)
+history_turns = 10          # rolling memory, cleared on restart
+max_turns_per_session = 200 # safety stop so a loop can't run up charges
+usd_to_gbp = 0.75           # rough rate for the cost estimate in the logs
+
+[llm.providers.groq]
+kind = "openai_compat"
+base_url = "https://api.groq.com/openai/v1"
+api_key_env = "GROQ_API_KEY"
+model = "openai/gpt-oss-120b"   # checked against Groq's model list, 9 Oct 2026
+price_in_per_mtok = 0.0     # free tier
+price_out_per_mtok = 0.0
+# Provider-specific options sent with each request. gpt-oss is a reasoning model:
+# keep its thinking short (it counts against max_tokens) and out of the reply.
+extra = { reasoning_effort = "low", include_reasoning = false }
+
+[llm.providers.openrouter]
+kind = "openai_compat"
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"
+model = "meta-llama/llama-3.3-70b-instruct:free"  # unverified; free model names change, see openrouter.ai/models
+price_in_per_mtok = 0.0
+price_out_per_mtok = 0.0
+
+[llm.providers.anthropic]
+kind = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-haiku-5-5"
+effort = "low"              # low | medium | high
+thinking = "disabled"       # "disabled" keeps voice replies fast; "adaptive" lets it think
+price_in_per_mtok = 0.10    # USD, prompts under 100K tokens; check docs.claude.com
+price_out_per_mtok = 0.50
+
+[stt]
+provider = "groq"           # "groq" (cloud) or "local" (faster-whisper, needs: pip install -e .[local])
+groq_model = "whisper-large-v3-turbo"
+local_model = "base.en"
+language = "en"
+
+[tts]
+provider = "kokoro"         # "kokoro" (most natural), "piper" (fastest) or "sapi" (Windows voices); falls back in that order
+effect = "film"             # "film" (the processed 'voice in the walls' sound) or "none"
+kokoro_model = "models/kokoro/kokoro-v1.0.int8.onnx"
+kokoro_voices = "models/kokoro/voices-v1.0.bin"
+kokoro_voice = "bm_daniel"  # British male options: bm_daniel, bm_george, bm_lewis, bm_fable
+kokoro_speed = 1.05         # <1 slower, >1 faster
+kokoro_lang = "en-gb"
+piper_model = "models/piper/en_GB-northern_english_male-medium.onnx"
+piper_speed = 1.1          # >1 slower, <1 faster
+sapi_voice = ""             # part of a voice name, e.g. "George"; blank = best available
+sapi_rate = 0               # -10 to 10
+
+[audio]
+push_to_talk_key = "f9"     # e.g. "f9", "f8", "scroll_lock"
+sample_rate = 16000
+max_record_seconds = 30
+input_device = ""           # blank = Windows default microphone; see: python -m jarvis --list-devices
+wake_word = true            # "Hey Jarvis", hands-free (runs on the laptop; --no-wake turns it off for a run)
+wake_threshold = 0.5        # 0-1: higher = fewer false wake-ups but more missed ones
+
+[hud]
+# The full-screen display: a local web page at http://127.0.0.1:<port>/ (this computer only).
+enabled = true              # voice mode starts it; --no-hud skips it for one run
+port = 8765
+window = "widget"            # "app": the full HUD in its own window, "widget": the small desktop widget (full HUD on request, see [widget]), "browser": a browser tab, "none": don't open
+fullscreen = false          # with window = "app": start full screen (F11 doesn't apply; Alt+F4 closes)
+close_quits = true          # with window = "app": closing the HUD window quits Jarvis
+
+[widget]
+# The small desktop widget (set [hud] window = "widget"). It answers in place; the full HUD opens on request
+# (click the chip it shows, or say "show me") and closes itself ~20 s after the answer. The morning briefing opens it by itself.
+close_quits = true          # closing the widget (right-click > Quit Jarvis) quits Jarvis
+orb = 320                   # the sphere's size in px (it is a round window; drag its outer rim to move it, hold the middle to talk)
+margin = 24                 # px from the top-right corner of the main screen, until you move it
+on_top = false              # false: sits behind your windows; the hotkey brings it forward for a peek (press again to send it back)
+hotkey = "ctrl+alt+j"
+transparent = false         # true = a see-through window (did not work with WebView2 on some laptops); false = solid, with rounded corners
+
+[google]
+# Read-only access to your Google accounts. Setup steps are in the README ("Google accounts").
+# The accounts themselves (addresses, filters) are private, so they go in config.local.toml,
+# which Git ignores; config.local.example.toml shows the format.
+enabled = true
+tokens_dir = "tokens"       # client_secret.json and one token file per account; gitignored
+
+[gmail]
+enabled = true
+days = 2                    # how far back "any new email?" looks
+max_results = 10            # per account, newest first
+cache_seconds = 120         # repeat questions within this time don't refetch
+
+[meal_plan]
+# The dietitian's weekly plans in Google Sheets (read-only). The sheets are listed in
+# config.local.toml. Jarvis answers "what's for dinner?" from one day's meals, and the HUD
+# shows today's meals; the rest of the sheet (recipes, groceries, tracker) is never read out.
+enabled = true
+cache_seconds = 600         # fetch each sheet at most every 10 minutes
+hud_card = true             # show today's meals on the HUD
+
+[games]
+# Mobile games news digest from public feeds (read-only). Polled in the background while
+# Jarvis runs; what's been seen is kept in data/games.json. Ask "what's new in mobile games?".
+enabled = true
+keep_days = 30
+hud_card = true
+
+[games.sources.gamespress]
+label = "GamesPress"
+kind = "rss"
+url = "https://www.gamespress.com/News/RSS"   # only the latest 20 items (a few hours), so check often
+every_minutes = 60
+mobile_filter = true        # all platforms: keep only items mentioning iOS, Android, mobile...
+
+[games.sources.pokemongo]
+label = "Pokémon GO news"
+kind = "pokemongo"          # no feed: reads the post titles and dates on the news page
+url = "https://pokemongo.com/news"
+every_minutes = 360
+
+[games.sources.gamezebo]
+label = "Gamezebo"
+kind = "rss"
+url = "https://www.gamezebo.com/feed/"
+every_minutes = 180
+
+[games.sources.droidgamers]
+label = "Droid Gamers"
+kind = "rss"
+url = "https://www.droidgamers.com/feed/"
+every_minutes = 180
+
+[games.sources.mobilegamer]
+label = "mobilegamer.biz"
+kind = "rss"
+url = "https://mobilegamer.biz/feed/"
+every_minutes = 180
+
+[calendar]
+# Reads every Google account's calendars. Accounts with "calendar_write" in their services
+# (config.local.toml) can have events added, moved or deleted by voice, always after a spoken yes.
+enabled = true
+hud_card = true
+card_minutes = 10
+
+[tasks]
+# The to-do list, in Google Tasks on the account that has "tasks" in its services (personal).
+# Adding, ticking off and moving happen straight away ("undo that" reverses); deleting asks first.
+enabled = true
+hud_card = true
+
+[safety]
+# Text from outside (email, web pages, news feeds, calendar invites, sheets) can hide instructions. When a turn has read
+# any of it, Jarvis refuses to change your data in that same turn (to-do changes, weigh-ins) and says so; you ask again
+# as a separate request. Timers and calendar changes (which need your spoken yes anyway) are not held.
+hold_writes = true
+
+[currency]
+# "convert 200 dollars to pounds": the European Central Bank's daily rates through Frankfurter (free, no key).
+enabled = true
+
+[websearch]
+# Lets Jarvis search the web for current facts (news, scores, prices...). Needs TAVILY_API_KEY in .env: free at
+# https://tavily.com, 1,000 searches a month, no card (it stops, rather than charges, when they run out).
+enabled = true
+max_results = 5
+monthly_limit = 900         # Jarvis stops itself here, leaving some of the 1,000 for you
+hud_card = true             # show the sources on the HUD while he answers
+
+[briefing]
+# The morning briefing: the first time you speak to Jarvis between from_hour and until_hour, the HUD shows the
+# briefing screen and Jarvis gives the highlights (also any time: "brief me"). It uses what the HUD cards hold.
+enabled = true
+from_hour = 5
+until_hour = 12
+meals = true                # include your next meal and Sam's (one meal each goes to the model)
+
+[opengym]
+# His self-hosted gym tracker (openGym, D:\opengym): "what's my workout today?", "how's my bench
+# going?", "I weighed 58.1 this morning" (saved at once; "undo that" reverses). Pair Jarvis once:
+# in the app, Settings > Account > Pair the mobile app, then python -m jarvis --opengym-pair CODE
+# (renewed automatically; "sign out everywhere" in the app ends it). The exercise catalogue path
+# and the meal plan whose tracker tab has his
+# weigh-ins (copied into openGym every few hours) are in config.local.toml.
+enabled = true
+url = "http://127.0.0.1:8080"   # the PC itself; the phone uses the Tailscale address
+session_file = "tokens/opengym.json"
+sync_hours = 3
+cache_seconds = 60
+
+[timers]
+# "Set a 40-minute timer for the pasta", "remind me at 6 to post the parcels". Kept in
+# data/timers.json so they survive a restart. Local only, so no confirmation is asked.
+enabled = true
+
+[logging]
+dir = "logs"

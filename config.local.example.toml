@@ -1,0 +1,34 @@
+# Private settings: copy this file to config.local.toml and fill it in.
+# config.local.toml is gitignored. Anything here overrides config.toml.
+
+# One block per Google account. The name after "accounts." is what you use with
+#   python -m jarvis --google-login <name>
+# services: any of "gmail", "calendar", "sheets" (all read-only).
+# gmail_query: Gmail search terms for the mail that matters in this account.
+#   Jarvis can narrow this (a sender, unread only) but never look outside it.
+
+[google.accounts.personal]
+email = "you@gmail.com"
+about = "personal mail"
+services = ["gmail", "calendar", "sheets"]
+gmail_query = "in:inbox category:primary"
+
+# Meal plans in Google Sheets (one tab per week, dates across the top).
+# account must have "sheets" in its services.
+[meal_plan.plans.me]
+sheet_id = "the long id from the sheet's link, between /d/ and /edit"
+account = "personal"
+who = "the user himself"
+
+[google.accounts.work]
+email = "you@example.com"
+about = "work mail"
+services = ["gmail", "calendar"]
+gmail_query = "in:inbox -category:promotions -category:social"
+
+# openGym: exercise names come from the instance's own catalogue folder (one file per exercise),
+# and weigh-ins are copied from the tracker tab of this meal plan (a name from [meal_plan.plans]).
+# Both optional.
+[opengym]
+library = "/path/to/openGym/catalogue/exercises"
+weigh_ins_from = "me"

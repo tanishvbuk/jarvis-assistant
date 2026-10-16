@@ -1,0 +1,39 @@
+# Secrets
+.env
+.env.*
+!.env.example
+tokens/
+config.local.toml
+
+# Logs
+logs/
+*.log
+
+# Audio
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.opus
+*.webm
+
+# Local data (tracker copies, notes, model downloads)
+data/
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

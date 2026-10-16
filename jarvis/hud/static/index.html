@@ -1,0 +1,995 @@
+<!doctype html>
+<!--
+  Jarvis HUD. One self-contained page: no build step, no external files, works offline.
+
+  The ring builders (ringC, ticks, arcs, blocks, arrows), the radial "spoke burst"
+  voice ring and the fixed-canvas fit-to-screen approach are adapted from A.L.I.C.E.
+  (https://github.com/texas0418/ALICE), used under the MIT licence:
+
+    MIT License
+    Copyright (c) 2026 Simon Shih
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+-->
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Jarvis</title>
+<style>
+:root{
+  --cy:#5fd8ff; --cy2:#3fb6dd; --dim:#2a86a8; --hot:#cff4ff; --wht:#effcff;
+  --amb:#ffae3b; --amb2:rgba(255,174,59,.55);
+  --g1:rgba(95,216,255,.85); --g2:rgba(95,216,255,.42); --g3:rgba(95,216,255,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
+body{font-family:Bahnschrift,"DIN Alternate","Arial Narrow",ui-sans-serif,sans-serif;font-weight:300;
+  font-stretch:semi-condensed;color:var(--cy);letter-spacing:.14em;-webkit-font-smoothing:antialiased}
+
+/* ---------- full-screen ambience (outside the scaled stage so it reaches every edge) ---------- */
+#hex{position:fixed;inset:0;opacity:.10;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'%3E%3Cpath d='M28 0 L56 16 L56 48 L28 64 L0 48 L0 16 Z M28 64 L28 97' fill='none' stroke='%235fd8ff' stroke-width='1'/%3E%3C/svg%3E");
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 10%,transparent 70%);
+  mask-image:radial-gradient(ellipse at center,#000 10%,transparent 70%)}
+#atmo{position:fixed;left:50%;top:46%;width:90vmin;height:90vmin;transform:translate(-50%,-50%);
+  pointer-events:none;transition:opacity .6s;
+  background:radial-gradient(circle,rgba(95,216,255,.12) 0%,rgba(95,216,255,.05) 35%,rgba(0,0,0,0) 62%)}
+#scan{position:fixed;inset:0;pointer-events:none;opacity:.08;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.5) 2px 4px)}
+#vig{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 65%,rgba(0,0,0,.55) 100%)}
+#sweep{position:fixed;left:0;right:0;top:0;height:200px;pointer-events:none;opacity:0;
+  background:linear-gradient(180deg,transparent,var(--g3) 44%,var(--g2) 50%,var(--g3) 56%,transparent)}
+@keyframes sweepdn{0%{opacity:.8;transform:translateY(-220px)}100%{opacity:0;transform:translateY(100vh)}}
+.sweeping{animation:sweepdn 1.1s cubic-bezier(.3,.7,.3,1)}
+
+/* ---------- the stage: a fixed 1280x720 design, scaled to fit any screen ---------- */
+#stage{position:fixed;left:50%;top:50%;width:1280px;height:720px;
+  transform:translate(-50%,-50%) scale(var(--s,1));transform-origin:50% 50%}
+
+.glow{text-shadow:0 0 4px var(--g1),0 0 12px var(--g2),0 0 28px var(--g3)}
+.hot{color:var(--hot);text-shadow:0 0 3px var(--hot),0 0 10px var(--g1),0 0 24px var(--g2)}
+
+/* corner brackets */
+.brk{position:absolute;width:34px;height:34px;border:1px solid var(--hot);
+  filter:drop-shadow(0 0 3px var(--g1)) drop-shadow(0 0 9px var(--g2))}
+.brk.tl{top:16px;left:16px;border-right:0;border-bottom:0}
+.brk.tr{top:16px;right:16px;border-left:0;border-bottom:0}
+.brk.bl{bottom:16px;left:16px;border-right:0;border-top:0}
+.brk.br{bottom:16px;right:16px;border-left:0;border-top:0}
+.edge{position:absolute;top:50%;font-size:10px;letter-spacing:.5em;color:var(--cy2);opacity:.7}
+.edge.l{left:-6px;transform:translateY(-50%) rotate(-90deg)}
+.edge.r{right:-6px;transform:translateY(-50%) rotate(90deg)}
+
+/* text size multiplier: raise --ts for a small, far-away screen (the Pi) */
+:root{--ts:1.15}
+
+/* top strip: clock, weather, lines, timers, link. Everything you glance at, in one row */
+#strip{position:absolute;top:18px;left:60px;right:60px;height:40px;display:flex;align-items:center;gap:18px;
+  font-size:calc(11px*var(--ts));letter-spacing:.14em;white-space:nowrap;
+  border-bottom:1px solid var(--g2);box-shadow:0 1px 9px -3px var(--g2)}
+#strip .wm{font-size:calc(15px*var(--ts));letter-spacing:.5em;color:var(--hot);
+  text-shadow:0 0 6px var(--hot),0 0 18px var(--g1)}
+#strip .chip{display:flex;align-items:baseline;gap:8px;color:var(--cy)}
+#strip .chip b{font-weight:300;color:var(--hot);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
+#strip .chip.bad b,#strip .bad{color:var(--amb);text-shadow:0 0 6px var(--amb2)}
+#strip .sp{flex:1}
+#strip .sep{width:1px;height:18px;background:var(--g2)}
+#strip>*{flex-shrink:0}
+#strip>#lnTimers{flex-shrink:1;min-width:0;overflow:hidden}
+#lnTimers .chip>span{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+#lnLines{display:flex;gap:12px}
+#lnTimers{display:flex;gap:14px}
+#strip .dot{width:8px;height:8px;border-radius:50%;background:var(--hot);box-shadow:0 0 6px var(--g1),0 0 14px var(--g2)}
+#strip .dot.off{background:var(--amb);box-shadow:0 0 6px var(--amb2)}
+
+/* cards sit at fixed places (so one can slide to the middle); a focused card takes the centre */
+.p-todo {--x:60px;  --y:76px;  --w:340px;--h:298px}
+.p-cal  {--x:60px;  --y:386px; --w:340px;--h:238px}
+.p-meals{--x:880px; --y:76px;  --w:340px;--h:298px}
+.p-gym  {--x:880px; --y:386px; --w:340px;--h:238px}
+.p-games{--x:60px;  --y:636px; --w:574px;--h:42px}
+.p-mail {--x:646px; --y:636px; --w:574px;--h:42px}
+/* the search card has no place of its own: it only ever appears forward */
+.p-search{--x:240px;--y:76px;--w:800px;--h:424px}
+.on .panel.p-search:not(.focused),body.focus .panel.p-search:not(.focused){opacity:0;pointer-events:none}
+.panel.focused{--x:240px;--y:76px;--w:800px;--h:424px;--ts:1.3;z-index:5}
+
+/* the morning briefing: six cards where the columns were, the ring a small orb on the right with the reply under it */
+.bp{--ts:1.05;opacity:0!important;pointer-events:none}
+.p-b1{--x:60px; --y:76px; --w:256px;--h:262px}
+.p-b2{--x:332px;--y:76px; --w:256px;--h:262px}
+.p-b3{--x:604px;--y:76px; --w:256px;--h:262px}
+.p-b4{--x:60px; --y:354px;--w:256px;--h:270px}
+.p-b5{--x:332px;--y:354px;--w:256px;--h:270px}
+.p-b6{--x:604px;--y:354px;--w:256px;--h:270px}
+body.brief .panel:not(.bp){opacity:0!important;pointer-events:none}
+body.brief .panel.bp{opacity:1!important;pointer-events:auto}
+body.brief #core{transform:translate(-50%,-50%) translate(410px,-72px) scale(.45)}
+body.brief #readout{opacity:0}
+body.brief #resp{left:1050px;top:262px;width:340px}
+body.brief #replyBox{height:250px}
+#briefHint{position:absolute;left:880px;top:604px;width:340px;text-align:center;font-size:9px;letter-spacing:.3em;
+  color:var(--cy2);opacity:0;transition:opacity .5s;pointer-events:none}
+body.brief #briefHint{opacity:.7}
+.wx2{display:flex;align-items:baseline;gap:10px;margin:2px 0 4px}
+.wx2 .t{font-size:calc(26px*var(--ts));font-weight:300;color:var(--hot);text-shadow:0 0 6px var(--hot),0 0 16px var(--g1)}
+.wx2 .s{font-size:calc(10px*var(--ts));letter-spacing:.22em;color:var(--cy)}
+.bsep{margin-top:6px;border-top:1px solid var(--g3);padding-top:4px}
+
+/* chamfered panels */
+.panel{position:absolute;left:var(--x);top:var(--y);width:var(--w);height:var(--h);cursor:pointer;
+  opacity:0;transform:translateY(8px);
+  transition:opacity .45s,transform .7s,left .45s ease,top .45s ease,width .45s ease,height .45s ease}
+.on .panel{opacity:1;transform:none}
+body.focus .panel:not(.focused){opacity:.14}
+.frame{position:absolute;inset:0;padding:12px 16px 13px;display:flex;flex-direction:column}
+.frame>.fb{position:absolute;inset:0;background:var(--cy2);
+  filter:drop-shadow(0 0 3px var(--g1)) drop-shadow(0 0 10px var(--g2));
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+.frame>.fi{position:absolute;inset:1.2px;background:rgba(0,8,14,.94);
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+.frame.flip>.fb,.frame.flip>.fi{
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.frame>.c{position:relative;flex:1;min-height:0;overflow:hidden}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:11px;letter-spacing:.34em;color:var(--hot);padding-bottom:6px;margin-bottom:8px;
+  border-bottom:1px solid var(--g1);box-shadow:0 1px 9px -2px var(--g2);
+  text-shadow:0 0 4px var(--g1),0 0 13px var(--g2)}
+.hdr span{font-size:9px;letter-spacing:.24em;color:var(--cy2)}
+.row{display:flex;justify-content:space-between;gap:14px;font-size:calc(13px*var(--ts));line-height:1.9}
+.row .k{color:var(--cy);opacity:.9;white-space:nowrap}
+.row .v{color:var(--hot);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
+.v.amb,.amb{color:var(--amb)!important;text-shadow:0 0 6px var(--amb2)!important}
+
+/* one-line cards in the bottom strip */
+.slim .frame{padding:0 18px;flex-direction:row;align-items:center}
+.slim .c{display:flex;align-items:center;gap:14px;font-size:calc(12px*var(--ts));letter-spacing:.18em;color:var(--cy);
+  white-space:nowrap;overflow:hidden}
+.slim .c b{font-weight:300;color:var(--hot);font-variant-numeric:tabular-nums;text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
+.slim .c .lbl{color:var(--hot);text-shadow:0 0 4px var(--g1),0 0 13px var(--g2)}
+.slim .c .hl{overflow:hidden;text-overflow:ellipsis;color:var(--hot);letter-spacing:.06em;min-width:0}
+
+/* placeholder cards */
+.empty{font-size:calc(11px*var(--ts));letter-spacing:.24em;color:var(--cy2);opacity:.75;padding:10px 0 6px}
+.empty b{display:block;font-weight:300;color:var(--amb);opacity:.9;margin-bottom:4px;
+  text-shadow:0 0 6px var(--amb2)}
+.row.tight{line-height:1.6}
+/* games list when the card is forward */
+.gi{font-size:calc(12px*var(--ts));line-height:1.35;color:var(--hot);margin-top:8px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
+.gi small{display:block;font-size:calc(9px*var(--ts));letter-spacing:.22em;color:var(--cy2);text-shadow:none}
+.gi.cov{opacity:.5}
+.mgrid{display:grid;gap:22px}
+.mlabel{font-size:calc(10px*var(--ts));letter-spacing:.3em;color:var(--amb);margin-bottom:6px;text-shadow:0 0 6px var(--amb2)}
+.row.ell .k{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.gtitle{font-size:calc(15px*var(--ts));letter-spacing:.2em;color:var(--hot);margin:2px 0 4px;
+  text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
+.gdetail{font-size:calc(10px*var(--ts));letter-spacing:.22em;color:var(--cy2);margin-bottom:4px}
+.gw{margin-top:6px;border-top:1px solid var(--g3);padding-top:4px}
+.row.tight .k .v{margin-left:6px}
+.row.bad .v{color:var(--amb)!important;text-shadow:0 0 6px var(--amb2)!important}
+/* meal card */
+.meal{margin:2px 0 8px;transition:opacity .4s}
+.meal .mt{display:flex;justify-content:space-between;font-size:calc(10px*var(--ts));letter-spacing:.24em;color:var(--cy)}
+.meal .mf{font-size:calc(13px*var(--ts));line-height:1.35;color:var(--hot);margin-top:2px;
+  text-shadow:0 0 3px var(--hot),0 0 10px var(--g1);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.meal.now .mt{color:var(--amb);text-shadow:0 0 6px var(--amb2)}
+.meal.past{opacity:.45}
+.pager{display:flex;gap:6px;justify-content:flex-end;height:4px}
+.pager i{width:16px;height:2px;background:var(--g2)}
+.pager i.on{background:var(--hot);box-shadow:0 0 6px var(--g1)}
+.bars{display:flex;gap:4px;align-items:flex-end;height:26px;margin-top:6px;opacity:.35}
+.bars i{flex:1;background:var(--g2)}
+
+/* ---------- the core: layered rings in 3D ----------
+   Each ring is drawn once onto its own canvas (glow included) and only rotated after that,
+   so the GPU composites finished pictures instead of re-filtering SVG every frame. */
+#core{position:absolute;left:50%;top:238px;width:340px;height:340px;transform:translate(-50%,-50%);
+  cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;border-radius:50%;transition:transform .45s ease}
+body.focus #core{transform:translate(-50%,-50%) translate(-480px,322px) scale(.3)}
+body.focus #readout{opacity:0}
+#readout{transition:opacity .3s}
+#scene{position:absolute;inset:0;perspective:1100px;perspective-origin:50% 45%;pointer-events:none}
+#rig{position:absolute;inset:0;transform-style:preserve-3d;transition:opacity .6s}
+.layer{position:absolute;left:50%;top:50%;transform-style:flat;transition:opacity .5s}
+.layer canvas{position:absolute;left:0;top:0;width:100%;height:100%}
+.spin{animation:rot linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes rotr{to{transform:rotate(-360deg)}}
+#glowcore{position:absolute;left:50%;top:50%;width:220px;height:220px;margin:-110px 0 0 -110px;border-radius:50%;
+  background:radial-gradient(circle,rgba(207,244,255,.9) 0%,rgba(95,216,255,.38) 26%,rgba(95,216,255,.10) 48%,rgba(95,216,255,0) 68%);
+  opacity:.45;transition:opacity .4s;pointer-events:none}
+
+#readout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:150px;
+  text-align:center;pointer-events:none}
+#stateLabel{font-size:10px;letter-spacing:.34em;padding-left:.34em;color:var(--hot);margin-bottom:5px;
+  text-shadow:0 0 4px var(--g1),0 0 14px var(--g2)}
+#big{font-size:34px;line-height:1;color:var(--wht);font-variant-numeric:tabular-nums;letter-spacing:.03em;
+  text-shadow:0 0 6px var(--hot),0 0 20px var(--g1),0 0 48px var(--g2)}
+#big small{font-size:13px;opacity:.55;margin-left:3px}
+#stateSub{font-size:8.5px;letter-spacing:.2em;color:var(--cy);opacity:.9;margin-top:6px;min-height:11px}
+
+/* ---------- state colouring (opacity only: cheap for the GPU) ---------- */
+.think{opacity:0}
+html[data-state="idle"] .ring{opacity:.72}
+html[data-state="listening"] .inner{opacity:1}
+html[data-state="listening"] #stateLabel{color:#fff}
+html[data-state="thinking"] .think{opacity:1}
+html[data-state="thinking"] .gyro{opacity:.8}
+html[data-state="thinking"] #stateLabel,html[data-state="thinking"] #big{color:var(--amb);
+  text-shadow:0 0 6px var(--amb2),0 0 20px rgba(255,174,59,.3)}
+html[data-state="offline"] #rig{opacity:.28}
+html[data-state="offline"] #stateLabel{color:var(--amb)}
+.gyro{opacity:.4}
+#core.held #rig{opacity:1}
+#core.held .inner{opacity:1}
+
+/* ---------- what was said ---------- */
+#resp{position:absolute;left:50%;top:428px;transform:translateX(-50%);width:440px;text-align:center;
+  transition:opacity 1.2s,top .45s ease,width .45s ease}
+body.focus #resp{top:512px;width:760px}
+body.focus #replyBox{height:72px}
+#resp.faded{opacity:0}
+#heard{font-size:calc(12px*var(--ts));letter-spacing:.14em;color:var(--cy2);min-height:18px;margin-bottom:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#heard:not(:empty)::before{content:"\203A  ";color:var(--amb)}
+#replyBox{height:100px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+#reply{font-size:calc(15px*var(--ts));line-height:1.6;letter-spacing:.04em;color:var(--wht);
+  text-shadow:0 0 4px var(--hot),0 0 13px var(--g1),0 0 34px var(--g2)}
+.car{display:inline-block;color:var(--hot);animation:bl .65s steps(1) infinite;margin-left:2px}
+.car.off{display:none}
+@keyframes bl{50%{opacity:0}}
+#rule{height:1px;margin:8px auto 0;width:0;opacity:.6;transition:width .6s ease;
+  background:linear-gradient(90deg,transparent,var(--hot),transparent);box-shadow:0 0 7px var(--g1)}
+#hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);font-size:9px;
+  letter-spacing:.4em;color:var(--cy2);opacity:.55;white-space:nowrap;transition:opacity .6s}
+body.talking #hint{opacity:0}
+
+@media (prefers-reduced-motion: reduce){ .spin{animation:none} }
+body.paused *{animation-play-state:paused!important}
+</style>
+</head>
+<body>
+<div id="hex"></div><div id="atmo"></div>
+<div id="stage">
+  <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
+  <div class="edge l">SYS·LOCAL·127.0.0.1</div><div class="edge r">ONLINE</div>
+
+  <div id="strip">
+    <span class="wm">JARVIS</span>
+    <span class="chip"><b id="topclock">--:--:--</b><span id="topdate">---</span></span>
+    <span class="chip" id="lnWx"><b id="lnTemp">--°</b><span id="lnSky">WEATHER</span><span id="lnRain"></span></span>
+    <span id="lnLines"></span>
+    <span class="sp"></span>
+    <span id="lnTimers"></span>
+    <span class="chip"><span id="iLat"></span><span class="dot off" id="linkDot"></span><b id="iLink">OFFLINE</b></span>
+  </div>
+
+  <div class="panel p-todo" data-card="tasks"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">TO DO <span id="todoSub">GOOGLE TASKS</span></div>
+    <div id="todoBody"><div class="empty"><b>WAITING</b>GOOGLE TASKS</div></div>
+  </div></div></div>
+  <div class="panel p-cal" data-card="calendar"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">CALENDAR <span id="calSub">TODAY</span></div>
+    <div id="calBody"><div class="empty"><b>WAITING</b>GOOGLE CALENDAR</div></div>
+  </div></div></div>
+  <div class="panel p-meals" data-card="meals"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">MEALS <span id="mealsSub">TODAY</span></div>
+    <div id="mealsBody"><div class="empty"><b>NOT CONNECTED</b>MEAL PLAN · GOOGLE SHEETS</div></div>
+    <div class="pager" id="mealsPager"></div>
+  </div></div></div>
+  <div class="panel p-gym" data-card="gym"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">GYM <span id="gymSub">TODAY</span></div>
+    <div id="gymBody"><div class="empty"><b>WAITING</b>OPENGYM</div></div>
+  </div></div></div>
+  <div class="panel slim p-games" data-card="games"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c" id="gamesBar">
+    <span class="lbl">GAMES</span><span class="hl" id="gHead">WAITING FOR THE FIRST CHECK</span>
+  </div></div></div>
+  <div class="panel slim p-mail" data-card="mail"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c" id="mailBar">
+    <span class="lbl">MAIL</span><span class="hl">WAITING</span>
+  </div></div></div>
+
+  <div class="panel p-search" data-card="search"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">WEB SEARCH <span id="searchSub">TAVILY</span></div>
+    <div id="searchBody"></div>
+  </div></div></div>
+  <div class="panel bp p-b1"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">OUT THE DOOR</div><div id="b1"></div>
+  </div></div></div>
+  <div class="panel bp p-b2"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">TODAY <span id="b2Sub">CALENDAR</span></div><div id="b2"></div>
+  </div></div></div>
+  <div class="panel bp p-b3"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">DUE <span>TO DO</span></div><div id="b3"></div>
+  </div></div></div>
+  <div class="panel bp p-b4"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">MEALS <span>NEXT UP</span></div><div id="b4"></div>
+  </div></div></div>
+  <div class="panel bp p-b5"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">GYM <span id="b5Sub">TODAY</span></div><div id="b5"></div>
+  </div></div></div>
+  <div class="panel bp p-b6"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
+    <div class="hdr">MAIL · GAMES <span>OVERNIGHT</span></div><div id="b6"></div>
+  </div></div></div>
+  <div id="briefHint">SAY “THANKS” · OR TAP A CARD TO DISMISS</div>
+
+  <div id="core" title="Hold to talk">
+    <div id="scene"><div id="rig"></div></div>
+    <div id="readout">
+      <div id="stateLabel">CONNECTING</div>
+      <div id="big">--:--</div>
+      <div id="stateSub"></div>
+    </div>
+  </div>
+
+  <div id="resp">
+    <div id="heard"></div>
+    <div id="replyBox"><div id="reply"><span id="replyText"></span><span class="car off" id="car">&#9612;</span></div></div>
+    <div id="rule"></div>
+  </div>
+  <div id="hint">HOLD THE RING OR F9 TO SPEAK</div>
+</div>
+<div id="scan"></div><div id="vig"></div><div id="sweep"></div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const R=d=>d*Math.PI/180;
+const TZ=Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/* ======================= the ring, in 3D =======================
+   Ring builders adapted from A.L.I.C.E. (MIT), redrawn on canvas. Units are the original
+   800x800 design; each layer canvas is sized to its own radius and drawn once (glow included),
+   then only CSS-rotated. Depth comes from translateZ on each layer inside #rig, which tilts
+   and sways. The spokes and the globe are the only things drawn every frame. */
+const CORE=340, U=CORE/800;                 // core size in px, px per design unit
+const COL={cy:'#5fd8ff',cy2:'#3fb6dd',dim:'#2a86a8',hot:'#cff4ff',amb:'#ffae3b'};
+const rig=$('#rig');
+
+function ringC(c,r,o={}){c.save();c.globalAlpha=o.o??.6;c.strokeStyle=COL[o.s||'dim'];c.lineWidth=o.w||1;
+  if(o.dash)c.setLineDash(o.dash);c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.stroke();c.restore()}
+function ticks(c,r,n,len,o={}){c.save();c.globalAlpha=o.o??.55;c.strokeStyle=COL[o.s||'dim'];c.lineWidth=o.w||1;c.beginPath();
+  for(let i=0;i<n;i++){const a=R(i/n*360),L=(o.every&&i%o.every===0)?(o.longLen||len*2.2):len;
+    c.moveTo(Math.cos(a)*r,Math.sin(a)*r);c.lineTo(Math.cos(a)*(r+L),Math.sin(a)*(r+L))}
+  c.stroke();c.restore()}
+function arcs(c,r,segs,o={}){c.save();c.globalAlpha=o.o??.85;c.strokeStyle=COL[o.s||'cy'];c.lineWidth=o.w||2;
+  const st=360/segs,gp=o.gap??18,off=o.off||0;
+  for(let i=0;i<segs;i++){c.beginPath();c.arc(0,0,r,R(off+i*st+gp/2),R(off+(i+1)*st-gp/2));c.stroke()}
+  c.restore()}
+function blocks(c,r,n,o={}){const h=o.h||9,w=o.bw||5;c.save();c.fillStyle=COL[o.s||'cy'];
+  for(let i=0;i<n;i++){c.save();c.rotate(R(i/n*360));c.globalAlpha=(o.alt&&i%o.alt)?.18:(o.o??.75);
+    c.fillRect(-w/2,-r-h/2,w,h);c.restore()}
+  c.restore()}
+function arrows(c,r,n,o={}){const sz=o.sz||10;c.save();c.globalAlpha=o.o??.7;c.fillStyle=COL[o.s||'cy'];
+  for(let i=0;i<n;i++){c.save();c.rotate(R(i/n*360));c.beginPath();c.moveTo(-sz,-r);c.lineTo(sz,-r);c.lineTo(0,-r+sz*1.5);
+    c.closePath();c.fill();c.restore()}
+  c.restore()}
+function textRing(c,r,text){c.save();c.globalAlpha=.55;c.fillStyle=COL.cy2;c.font='11px Bahnschrift, sans-serif';
+  c.textAlign='center';c.textBaseline='middle';const step=R(1.55);
+  for(let i=0;i<text.length;i++){c.save();c.rotate(i*step);c.translate(0,-r);c.fillText(text[i],0,0);c.restore()}
+  c.restore()}
+
+/* Layers, back to front. z is depth in px; spin is seconds per turn (negative = anticlockwise);
+   cls sets which state rules apply; glow is the colour of the drawn-in glow. */
+const LAYERS=[
+  {z:-90, r:372, cls:'ring', glow:'cy', draw:c=>{ticks(c,366,144,6,{o:.5,every:12,longLen:16,s:'cy2'});ringC(c,358,{o:.5});ringC(c,314,{o:.5,dash:[2,9]})}},
+  {z:-90, r:395, cls:'ring', spin:240, draw:c=>textRing(c,388,'J.A.R.V.I.S.  ·  PERSONAL SYSTEMS  ·  LOCAL NODE 127.0.0.1  ·  VOICE INTERFACE  ·  ')},
+  {z:-75, r:340, cls:'ring', glow:'cy', spin:170, draw:c=>blocks(c,330,60,{h:10,bw:4,alt:3,o:.75})},
+  {z:-60, r:310, cls:'ring', glow:'hot', spin:-120, draw:c=>arrows(c,298,6,{sz:9,o:.9,s:'hot'})},
+  {z:-45, r:352, cls:'ring', glow:'amb', spin:-210, draw:c=>arcs(c,344,3,{w:6,gap:70,o:.65,s:'amb'})},
+  {z:-10, r:290, cls:'ring inner', glow:'cy', spin:95, draw:c=>ticks(c,278,180,6,{o:.4})},
+  {z:0,   r:270, cls:'ring inner', glow:'hot', spin:-64, draw:c=>arcs(c,264,5,{w:4,gap:26,o:.95,s:'hot'})},
+  {z:8,   r:256, cls:'ring inner', glow:'hot', spin:130, draw:c=>blocks(c,246,40,{h:14,bw:6,alt:2,o:.9,s:'hot'})},
+  {z:12,  r:240, cls:'ring inner', glow:'cy', draw:c=>{ringC(c,234,{o:.6});ringC(c,150,{s:'hot',o:.7});ringC(c,142,{o:.5})}},
+  {z:18,  r:240, cls:'ring inner', glow:'cy', spin:-88, draw:c=>ticks(c,216,72,10,{o:.55,every:6,longLen:20})},
+  {z:22,  r:212, cls:'ring inner', glow:'amb', spin:52, draw:c=>arcs(c,206,4,{w:1.5,gap:62,o:.75,s:'amb'})},
+  {z:28,  r:142, cls:'ring inner', glow:'cy', spin:-30, draw:c=>ticks(c,134,60,5,{o:.5})},
+  {z:40,  r:188, cls:'think', glow:'amb', spin:1.6, draw:c=>arcs(c,182,2,{w:3,gap:130,o:.95,s:'amb'})},
+  {z:40,  r:180, cls:'think', glow:'amb', spin:-2.4, draw:c=>arcs(c,174,3,{w:1.5,gap:90,o:.7,s:'amb'})},
+];
+const GLOW={cy:'rgba(95,216,255,.85)',hot:'rgba(207,244,255,.9)',amb:'rgba(255,174,59,.8)'};
+
+// gyroscope rings: drawn once, turned in 3D by the frame loop
+const GYROS=[
+  {r:300, ax:72, ay:0,   speed:9,   col:'cy'},
+  {r:282, ax:64, ay:60,  speed:-13, col:'amb'},
+  {r:264, ax:80, ay:-55, speed:17,  col:'cy'},
+];
+
+let pxScale=1;                                // canvas pixels per CSS px (screen scale x device pixels)
+function paintLayer(L){const px=Math.ceil(L.r*2*U*pxScale);L.cv.width=L.cv.height=px;
+  const c=L.cv.getContext('2d'),k=px/(L.r*2);c.setTransform(k,0,0,k,px/2,px/2);  // design units, centred
+  if(L.glow){c.shadowColor=GLOW[L.glow];c.shadowBlur=7*U*pxScale}
+  L.draw(c)}
+function placeLayer(el,r,z){const px=r*2*U;el.style.width=el.style.height=px+'px';
+  el.style.marginLeft=el.style.marginTop=(-px/2)+'px';if(z!=null)el.style.transform=`translateZ(${z}px)`}
+
+const layerEls=[];
+for(const L of LAYERS){
+  const el=document.createElement('div');el.className='layer '+(L.cls||'');if(L.id)el.id=L.id;
+  const cv=document.createElement('canvas');
+  if(L.spin){cv.className='spin';cv.style.animationName=L.spin<0?'rotr':'rot';cv.style.animationDuration=Math.abs(L.spin)+'s';
+    if(Math.abs(L.spin)>=30)cv.style.animationTimingFunction='steps('+Math.round(Math.abs(L.spin)*12)+')'}
+  el.appendChild(cv);rig.appendChild(el);placeLayer(el,L.r,L.z);L.cv=cv;layerEls.push(L);
+}
+
+const gyroEls=GYROS.map(g=>{const el=document.createElement('div');el.className='layer gyro';
+  const cv=document.createElement('canvas');el.appendChild(cv);rig.appendChild(el);placeLayer(el,g.r+8,null);
+  g.cv=cv;g.el=el;g.a=Math.random()*360;g.draw=c=>{ringC(c,g.r,{s:g.col,o:.75,w:1.2});
+    arcs(c,g.r,3,{w:3,gap:150,o:.9,s:g.col==='amb'?'amb':'hot'});ticks(c,g.r-2,36,-6,{o:.6,s:g.col})};
+  g.glow=g.col==='amb'?'amb':'cy';return g});
+
+// glow and spokes live at the front of the rig
+const glowEl=document.createElement('div');glowEl.id='glowcore';glowEl.style.transform='translateZ(5px)';rig.appendChild(glowEl);
+function frontCanvas(r,z){const el=document.createElement('div');el.className='layer';const cv=document.createElement('canvas');
+  el.appendChild(cv);rig.appendChild(el);placeLayer(el,r,z);return cv}
+const globeCv=frontCanvas(120,2), waveCv=frontCanvas(290,14);
+
+function paintAll(){
+  for(const L of LAYERS)paintLayer(L);
+  for(const g of GYROS)paintLayer({cv:g.cv,r:g.r+8,glow:g.glow,draw:g.draw});
+  globeCv.width=globeCv.height=Math.ceil(240*U*pxScale);
+  waveCv.width=waveCv.height=Math.ceil(580*U*pxScale);
+}
+function redrawRings(){
+  const s=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s'))||1;
+  pxScale=Math.min(3,Math.max(1,s*(window.devicePixelRatio||1)));paintAll();
+}
+
+/* radial spoke burst = the voice (adapted from A.L.I.C.E.): 144 spokes on one canvas */
+const N=144,RW=156,WL=118,bars=[];
+for(let i=0;i<N;i++){const a=R(i/N*360);bars.push({a,v:0,t:i*.37,c:Math.cos(a),s:Math.sin(a)})}
+function drawWave(){
+  const c=waveCv.getContext('2d'),k=waveCv.width/580;c.setTransform(1,0,0,1,0,0);
+  c.clearRect(0,0,waveCv.width,waveCv.height);c.setTransform(k,0,0,k,waveCv.width/2,waveCv.height/2);
+  c.lineCap='butt';
+  // two passes instead of a blur: a wide faint stroke for the glow, a thin bright one on top
+  for(const [w,alpha] of [[6,.16],[2.2,1]]){
+    for(let band=0;band<4;band++){
+      c.beginPath();let any=false;
+      for(const b of bars){if(Math.min(3,Math.floor(b.v*4))!==band)continue;any=true;const len=3+b.v*WL;
+        c.moveTo(b.c*RW,b.s*RW);c.lineTo(b.c*(RW+len),b.s*(RW+len))}
+      if(!any)continue;c.globalAlpha=alpha*(.45+band*.18);c.strokeStyle=w>3?COL.cy:COL.hot;c.lineWidth=w;c.stroke();
+    }
+  }
+}
+
+/* wireframe globe behind the readout */
+let globeRot=0;
+function drawGlobe(dt){
+  const c=globeCv.getContext('2d'),k=globeCv.width/240,rad=96,tilt=R(22);
+  globeRot+=dt*(state==='thinking'?.9:state==='listening'?.45:.18);
+  c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,globeCv.width,globeCv.height);c.setTransform(k,0,0,k,globeCv.width/2,globeCv.height/2);
+  c.lineWidth=.8;
+  const proj=(lat,lon)=>{const x=Math.cos(lat)*Math.sin(lon),y=Math.sin(lat),z=Math.cos(lat)*Math.cos(lon);
+    return [x*rad, (y*Math.cos(tilt)-z*Math.sin(tilt))*rad, y*Math.sin(tilt)+z*Math.cos(tilt)]};
+  const line=(pts)=>{for(let i=1;i<pts.length;i++){const [x0,y0,z0]=pts[i-1],[x1,y1,z1]=pts[i];
+      c.globalAlpha=(z0+z1)/2>0?.42:.12;c.beginPath();c.moveTo(x0,y0);c.lineTo(x1,y1);c.stroke()}};
+  c.strokeStyle=state==='thinking'?COL.amb:COL.cy;
+  for(let m=0;m<10;m++){const lon=globeRot+m*Math.PI/10,pts=[];for(let i=0;i<=32;i++)pts.push(proj(-Math.PI/2+i*Math.PI/32,lon));line(pts)}
+  for(let p=-2;p<=2;p++){const lat=p*Math.PI/7,pts=[];for(let i=0;i<=40;i++)pts.push(proj(lat,i*Math.PI*2/40));line(pts)}
+}
+
+/* ======================= state ======================= */
+const ST={
+  offline:  {l:'OFFLINE',    s:'RECONNECTING', e:.15},
+  idle:     {l:'STANDBY',    s:'',             e:.30},
+  listening:{l:'LISTENING',  s:'SPEAK NOW',    e:.85},
+  thinking: {l:'PROCESSING', s:'QUERY IN FLIGHT', e:.45},
+  speaking: {l:'RESPONDING', s:'',             e:.9},
+};
+let state='offline', stateAt=performance.now(), energy=.2, notice=null;
+let micLevel=0, voiceLevel=0, micAt=0, voiceAt=0, peak=0;
+
+function setState(s){
+  if(!ST[s]) return;
+  const prev=state; state=s; stateAt=performance.now();
+  document.documentElement.dataset.state=s;
+  $('#stateLabel').textContent=ST[s].l;
+  glowEl.style.opacity = s==='idle'?.45:s==='offline'?.15:.95;
+  if(s==='listening') clearReply();
+  if(s==='idle') scheduleFade(); else unfade();
+  holdFocus(s);
+  if(briefOn){clearTimeout(briefTimer);if(s==='idle')briefTimer=setTimeout(hideBrief,150000)}  // a couple of minutes to read it
+  if(s==='speaking' && prev!=='speaking') sweep();
+}
+function sweep(){const w=$('#sweep');w.classList.remove('sweeping');void w.offsetWidth;w.classList.add('sweeping')}
+function flash(text){notice={text,until:performance.now()+3500}}
+
+/* ======================= animation ======================= */
+let last=performance.now(), tiltX=16, swayT=0, gyroSpeed=1;
+// Nobody watching (window minimised, or the tab hidden): stop drawing altogether, and freeze the CSS spins.
+let paused=false, loopId=0;
+function setPaused(p){
+  p=!!p; if(p===paused)return; paused=p; document.body.classList.toggle('paused',p);
+  send({t:'seen',v:!p});  // Jarvis skips refreshing cards nobody can see
+  if(!p){last=performance.now();loopId++;requestAnimationFrame(frame)}
+}
+window.hudPause=setPaused;  // called by the HUD window process when it's minimised or restored
+document.addEventListener('visibilitychange',()=>setPaused(document.hidden));
+function frame(now){
+  if(paused)return;  // setPaused(false) restarts the loop
+  // On standby nothing moves fast: about 12 frames a second looks the same and costs far less.
+  // (The rings' rotation is CSS, run by the compositor, so it stays smooth regardless.)
+  if((state==='idle'||state==='offline') && !held && now-last<80){
+    const id=loopId; setTimeout(()=>{if(id===loopId)requestAnimationFrame(frame)},Math.max(0,80-(now-last))); return}
+  const dt=Math.min(100,now-last)/1000; last=now;  // up to 100 ms: idle frames are ~80 ms apart
+  // levels decay if the server stops sending (e.g. SAPI voice gives no levels)
+  if(now-micAt>250) micLevel*=.85;
+  if(now-voiceAt>250) voiceLevel*=.85;
+  const live = state==='listening' ? micLevel : state==='speaking' ? voiceLevel : 0;
+  const realVoice = state==='speaking' && now-voiceAt<400;
+  energy+=(ST[state].e-energy)*Math.min(1,dt*4);
+  for(let i=0;i<N;i++){const b=bars[i]; b.t+=dt*(1.1+(i%9)*.14);
+    let amp;
+    if(state==='listening' || realVoice){
+      // follow the real audio: a shared envelope with a per-spoke wobble so it stays alive
+      const wob=(Math.sin(b.t*2.6+i*.41)*.5+.5)*.45+.55;
+      amp=(.08+live*1.3)*wob;
+    } else if(state==='idle'||state==='offline'){
+      amp=.2+(Math.sin(b.t*.7+i*.28)*.5+.5)*.28;
+    } else if(state==='thinking'){
+      const p=Math.sin(now/240-i*.11)*.5+.5; amp=Math.pow(p,4)*.75;
+    } else { // speaking with a voice that reports no levels: synthetic speech motion
+      const n=Math.sin(b.t*3.3+i)*.5+Math.sin(b.t*8.1+i*1.9)*.3+Math.sin(b.t*14.7)*.2;
+      amp=Math.max(0,n*.5+.5)*(Math.sin(now/145)*.34+.66);
+    }
+    const v=amp*energy; b.v+=(v-b.v)*Math.min(1,dt*15);
+  }
+  drawWave(); drawGlobe(dt);
+  // 3D: the stack leans back and sways; it turns to face you while you speak
+  const lean = state==='listening'||held ? 4 : state==='thinking' ? 24 : 16;
+  tiltX+=(lean-tiltX)*Math.min(1,dt*2.5); swayT+=dt;
+  rig.style.transform=`rotateX(${(tiltX+Math.sin(swayT*.31)*3).toFixed(2)}deg) rotateY(${(Math.sin(swayT*.23)*9).toFixed(2)}deg)`;
+  // gyroscopes: each tilted ring precesses around the core; faster while thinking
+  const gs = state==='thinking'?4:state==='speaking'?1.6:1; gyroSpeed+=(gs-gyroSpeed)*Math.min(1,dt*2);
+  for(const g of GYROS){g.a+=g.speed*gyroSpeed*dt;
+    g.el.style.transform=`rotateZ(${(g.a+g.ay).toFixed(2)}deg) rotateX(${g.ax}deg) rotateZ(${(g.a*1.7).toFixed(2)}deg)`}
+  glowEl.style.transform=`translateZ(5px) scale(${(1+live*.15).toFixed(3)})`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* centre readout and clocks: timers, so they keep going in a hidden tab */
+const fmtTime=(o)=>new Intl.DateTimeFormat('en-GB',{timeZone:TZ,...o}).format(new Date());
+function tick(){
+  const now=performance.now();
+  $('#topclock').textContent=fmtTime({hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  $('#topdate').textContent=fmtTime({weekday:'short',day:'numeric',month:'short'}).toUpperCase();
+  const big=$('#big'), sub=$('#stateSub');
+  if(state==='idle'||state==='offline'){
+    big.textContent=fmtTime({hour:'2-digit',minute:'2-digit'});
+    sub.textContent=state==='offline'?ST.offline.s:fmtTime({weekday:'long'}).toUpperCase();
+  } else if(state==='thinking'){
+    big.innerHTML=((now-stateAt)/1000).toFixed(1)+'<small>s</small>';
+    sub.textContent=ST.thinking.s;
+  } else {
+    const lv=state==='listening'?micLevel:voiceLevel;
+    big.innerHTML=Math.round(lv*100)+'<small>%</small>';
+    sub.textContent=ST[state].s;
+  }
+  if(notice && now<notice.until) sub.textContent=notice.text; else notice=null;
+}
+setInterval(tick,100); tick();
+
+/* ======================= reply typing ======================= */
+// Each sentence arrives as Jarvis starts saying it; type it at roughly speaking pace,
+// and catch up quickly if the next sentence is already waiting.
+const CPS=15;
+let typeQ=[], typing=false, typeGen=0, fadeTimer=null;
+function clearReply(){typeGen++;typeQ=[];typing=false;$('#replyText').textContent='';$('#car').classList.add('off');
+  $('#rule').style.width='0';$('#heard').textContent=''}
+function addSentence(t){typeQ.push(t);if(!typing)typeNext()}
+function typeNext(){
+  const gen=typeGen, box=$('#replyText');
+  if(!typeQ.length){typing=false;$('#car').classList.add('off');$('#rule').style.width='100%';return}
+  typing=true;$('#car').classList.remove('off');unfade();
+  const t=(box.textContent?' ':'')+typeQ.shift(); const base=box.textContent;
+  // Position comes from the clock, not from counting ticks, so a throttled timer
+  // (hidden tab, busy machine) catches up instead of falling behind the voice.
+  let i=0, at=performance.now();
+  const step=()=>{ if(gen!==typeGen)return;
+    const now=performance.now(), rate=typeQ.length?CPS*4:CPS;
+    i=Math.min(t.length,i+Math.max(1,Math.floor((now-at)*rate/1000))); at=now;
+    box.textContent=base+t.slice(0,i);
+    if(i<t.length) setTimeout(step,1000/CPS); else typeNext(); };
+  step();
+}
+function showReplyNow(sentences){clearReply();$('#replyText').textContent=sentences.join(' ');if(sentences.length)$('#rule').style.width='100%'}
+function scheduleFade(){clearTimeout(fadeTimer);fadeTimer=setTimeout(()=>{$('#resp').classList.add('faded');document.body.classList.remove('talking')},45000)}
+function unfade(){clearTimeout(fadeTimer);$('#resp').classList.remove('faded');document.body.classList.add('talking')}
+
+/* ======================= link to Jarvis ======================= */
+let ws=null, talkEnabled=false, turns=0;
+// Short names for the panel; the full name is in the tooltip.
+const SHORT={
+  brain:v=>v.split('/').pop().trim(),                                   // groq / openai/gpt-oss-120b -> gpt-oss-120b
+  ears:v=>v.replace(/^[^:]*:/,'').replace(/-large|-turbo/g,''),          // groq:whisper-large-v3-turbo -> whisper-v3
+  voice:v=>v.replace(/^[^:]*:/,'').replace(/^[a-z]{2}_[A-Z]{2}-/,'').replace(/-(low|medium|high)$/,'').replace(/_/g,' '),
+};
+const infoText={};
+function info(m){
+  for(const k of ['brain','ears','voice']) if(m[k]) infoText[k]=SHORT[k](m[k]).toUpperCase();
+  $('#iLink').parentNode.title=['brain','ears','voice'].filter(k=>infoText[k]).map(k=>k.toUpperCase()+' '+infoText[k]).join(' · ');
+}
+/* meal card: today's meals per plan; shows the current meal and the next ones, cycling between plans.
+   Brought forward it shows every meal of every plan side by side. Sheet text is untrusted, so it only ever goes in via textContent. */
+let meals=null, mealsPage=0;
+const mins=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null};
+function mk(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+const curMeal=(items,now)=>{let cur=-1;items.forEach((it,i)=>{const t=mins(it.time);if(t!=null&&t<=now)cur=i});return cur};
+function mealRow(items,i,cur,now){
+  const it=items[i], nextT=i+1<items.length?mins(items[i+1].time):null;
+  const isNow=i===cur&&(nextT==null||now<nextT)&&now-mins(it.time)<180;
+  const row=mk('div','meal'+(isNow?' now':i<cur?' past':''));
+  const top=mk('div','mt');top.appendChild(mk('span',null,(it.name||'MEAL').toUpperCase()));
+  top.appendChild(mk('span',null,isNow?'NOW':(it.time||'')));
+  row.appendChild(top);row.appendChild(mk('div','mf',it.food||'—'));
+  return row;
+}
+function renderMeals(){
+  if(!meals)return;
+  const secs=meals.sections||[], body=$('#mealsBody'), pager=$('#mealsPager');
+  if(!secs.length)return;
+  const d=new Date(), now=d.getHours()*60+d.getMinutes();
+  body.replaceChildren(); pager.replaceChildren();
+  if(focusId==='meals'){
+    $('#mealsSub').textContent='TODAY';
+    const grid=mk('div','mgrid');grid.style.gridTemplateColumns='repeat('+secs.length+',minmax(0,1fr))';
+    for(const s of secs){const col=mk('div','mcol');col.appendChild(mk('div','mlabel',s.label));
+      const items=s.items||[], cur=curMeal(items,now);
+      if(s.error)col.appendChild(mk('div','empty',s.error));
+      else if(!items.length)col.appendChild(mk('div','empty','NOTHING LISTED'));
+      else items.forEach((_,i)=>col.appendChild(mealRow(items,i,cur,now)));
+      grid.appendChild(col)}
+    body.appendChild(grid);return}
+  mealsPage%=secs.length;
+  const s=secs[mealsPage];
+  $('#mealsSub').textContent=s.label+' · TODAY';
+  if(secs.length>1)secs.forEach((_,i)=>pager.appendChild(mk('i',i===mealsPage?'on':'')));
+  if(s.error){const e=mk('div','empty');e.appendChild(mk('b',null,s.error));e.appendChild(document.createTextNode('MEAL PLAN · GOOGLE SHEETS'));
+    body.appendChild(e);return}
+  const items=s.items||[], cur=curMeal(items,now);
+  let start=Math.max(0,Math.min(cur<0?0:cur,items.length-3));
+  for(let i=start;i<Math.min(items.length,start+3);i++)body.appendChild(mealRow(items,i,cur,now));
+  if(!items.length)body.appendChild(mk('div','empty','NOTHING LISTED'));
+}
+setInterval(()=>{if(meals&&(meals.sections||[]).length>1&&focusId!=='meals'){mealsPage++;renderMeals()}},12000);
+setInterval(renderMeals,30000);
+/* games digest: one headline cycling in the strip; brought forward, the whole list */
+let gameItems=[], gameAt=0;
+function showGame(){
+  const head=$('#gHead'); if(!head)return;
+  if(!gameItems.length){head.textContent='ALL CAUGHT UP';return}
+  gameAt%=gameItems.length; const it=gameItems[gameAt];
+  head.textContent=it.source.toUpperCase()+(it.covered?' · COVERED':'')+'  ›  '+it.title; head.title=it.title;
+}
+setInterval(()=>{if(gameItems.length>1&&focusId!=='games'){gameAt++;showGame()}},8000);
+function gamesCard(m){
+  gameItems=m.items||[];
+  const bar=$('#gamesBar');bar.replaceChildren();
+  if(focusId==='games'){
+    const h=mk('div','hdr','GAMES ');h.appendChild(mk('span',null,m.new+' NEW · '+m.uncovered+' UNCOVERED'));bar.appendChild(h);
+    if(!gameItems.length){const e=mk('div','empty');e.appendChild(mk('b',null,'ALL CAUGHT UP'));
+      e.appendChild(document.createTextNode('NOTHING SINCE THE LAST DIGEST'));bar.appendChild(e)}
+    for(const it of gameItems){const d=mk('div','gi'+(it.covered?' cov':''));
+      d.appendChild(mk('small',null,(it.source+(it.covered?' · COVERED':'')).toUpperCase()));
+      d.appendChild(document.createTextNode(it.title));d.title=it.title;bar.appendChild(d)}
+    return}
+  bar.appendChild(mk('span','lbl','GAMES'));
+  const a=mk('span');a.appendChild(mk('b',null,String(m.new)));a.appendChild(document.createTextNode(' NEW'));bar.appendChild(a);
+  const b=mk('span');b.appendChild(mk('b','amb',String(m.uncovered)));b.appendChild(document.createTextNode(' UNCOVERED'));bar.appendChild(b);
+  const h=mk('span','hl');h.id='gHead';bar.appendChild(h);showGame();
+}
+/* localcard card: weather and lines from the localcard card, countdowns from the timers card */
+function row(k,v,cls){const r=mk('div','row tight'+(cls?' '+cls:''));r.appendChild(mk('span','k',k));r.appendChild(mk('span','v',v));return r}
+function localcard(m){
+  if(m.weather){const w=m.weather;$('#lnTemp').textContent=w.temp+'°';$('#lnSky').textContent=w.sky.toUpperCase();
+    $('#lnRain').textContent='RAIN '+w.rain+'%';$('#lnWx').title='HI '+w.hi+'° · LO '+w.lo+'°'+(m.area?' · '+m.area:'');
+    $('#lnWx').classList.toggle('bad',w.rain>=50)}
+  const box=$('#lnLines');box.replaceChildren();
+  for(const l of m.lines||[]){const bad=!l.ok&&!/closed/i.test(l.status);  // closed overnight is normal, not a problem
+    const c=mk('span','chip'+(bad?' bad':''));c.appendChild(document.createTextNode(l.name.replace(/ line$/i,'').replace(/^elizabeth$/i,'Eliz').toUpperCase()));
+    c.appendChild(mk('b',null,l.ok?'GOOD':l.status.toUpperCase()));c.title=l.status;box.appendChild(c)}
+}
+let timerItems=[];
+function leftText(due){
+  const left=Math.max(0,(new Date(due)-Date.now())/1000);
+  const h=Math.floor(left/3600),m=Math.floor(left%3600/60),s=Math.floor(left%60);
+  return left>=86400?new Date(due).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}).toUpperCase()
+    :h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;
+}
+function renderTimers(){
+  const box=$('#lnTimers');box.replaceChildren();
+  for(const t of timerItems.slice(0,2)){
+    const left=Math.max(0,(new Date(t.due)-Date.now())/1000);
+    const h=Math.floor(left/3600),m=Math.floor(left%3600/60),s=Math.floor(left%60);
+    const v=left>=86400?new Date(t.due).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}).toUpperCase()
+      :h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;
+    const c=mk('span','chip'+(left<60?' bad':''));c.appendChild(mk('span',null,(t.kind==='timer'?'⏱ ':'⏰ ')+t.label.toUpperCase()));
+    c.appendChild(mk('b',null,v));box.appendChild(c)}
+}
+setInterval(renderTimers,1000);
+
+/* a card shows its first few rows; brought forward it shows them all */
+function part(id,items,n,extra){const all=items||[],shown=focusId===id?all:all.slice(0,n);return [shown,all.length-shown.length+(extra||0)]}
+const emptyNote=(head,sub)=>{const e=mk('div','empty');e.appendChild(mk('b',null,head));e.appendChild(document.createTextNode(sub));return e};
+
+/* calendar card: today's remaining events, or tomorrow's */
+function calendarCard(m){
+  $('#calSub').textContent=m.label||'TODAY';
+  const body=$('#calBody');body.replaceChildren();
+  if(m.error&&!(m.items||[]).length){body.appendChild(emptyNote(m.error,'GOOGLE CALENDAR'));return}
+  if(!(m.items||[]).length){body.appendChild(emptyNote('NOTHING ON','TODAY OR TOMORROW'));return}
+  const [shown,more]=part('calendar',m.items,4,m.more);
+  for(const it of shown){const r=row(it.time,'','ell');r.querySelector('.v').textContent=it.title;
+    r.title=it.title+' · '+it.cal;body.appendChild(r)}
+  if(more)body.appendChild(mk('div','empty','+ '+more+' MORE'));
+}
+
+/* to-do card: open tasks, soonest deadline first */
+function todoCard(m){
+  const body=$('#todoBody');body.replaceChildren();
+  if(m.error){body.appendChild(emptyNote(m.error,'GOOGLE TASKS'));return}
+  if(!(m.items||[]).length){body.appendChild(emptyNote('ALL CLEAR','NOTHING ON THE LIST'));return}
+  const [shown,more]=part('tasks',m.items,6,m.more);
+  for(const it of shown){const r=row(it.title,it.when||'—','ell'+(it.late?' bad':''));r.title=it.title;body.appendChild(r)}
+  if(more)body.appendChild(mk('div','empty','+ '+more+' MORE'));
+}
+
+/* gym card: today's session (planned, done or rest day) and the weight trend */
+function gymCard(m){
+  const body=$('#gymBody');body.replaceChildren();
+  if(m.error){body.appendChild(emptyNote(m.error,'OPENGYM'));return}
+  $('#gymSub').textContent=m.status==='DONE'?'DONE TODAY':m.status==='REST'?'REST DAY':'TODAY';
+  body.appendChild(mk('div','gtitle'+(m.status==='PLANNED'?' amb':''),(m.title||'').toUpperCase()));
+  if(m.detail)body.appendChild(mk('div','gdetail',m.detail.toUpperCase()));
+  const [shown,more]=part('gym',m.items,3,m.more);
+  for(const it of shown){const r=row(it.name,(it.last||it.plan||'').toUpperCase(),'ell');r.title=it.name+' · '+it.plan;body.appendChild(r)}
+  if(more)body.appendChild(mk('div','empty','+ '+more+' MORE'));
+  const w=m.weight;
+  if(w){const box=mk('div','gw');
+    const stale=w.days>=7;
+    box.appendChild(row('WEIGHT',w.latest+' '+w.unit.toUpperCase()+(w.trend?' · '+w.trend+'/WK':'')+(stale?' · '+w.days+'D AGO':''),stale?'bad':''));
+    if(w.goal)box.appendChild(row('GOAL',w.goal+' '+w.unit.toUpperCase()+(w.left?' · '+w.left+' TO GO':''),''));
+    body.appendChild(box)}
+}
+
+/* mail card: counts only. A strip line; brought forward, a row per account */
+function mailCard(m){
+  const bar=$('#mailBar');bar.replaceChildren();bar.title='';
+  const plus=m.capped?'+':'', rows=m.accounts||[];
+  if(focusId==='mail'){
+    const h=mk('div','hdr','MAIL ');h.appendChild(mk('span',null,'LAST '+m.days+' DAYS'));bar.appendChild(h);
+    for(const r of rows)bar.appendChild(row(r.name.toUpperCase(),r.people+' FROM PEOPLE · '+r.auto+' AUTOMATED',''));
+    if(!rows.length&&!(m.problems||[]).length)bar.appendChild(emptyNote('NO ACCOUNTS','GMAIL'));
+    for(const n of m.problems||[])bar.appendChild(row(n.toUpperCase(),'SIGN-IN NEEDED','bad'));
+    return}
+  bar.appendChild(mk('span','lbl','MAIL'));
+  if(rows.length){
+    const a=mk('span');a.appendChild(mk('b',m.people?'amb':null,m.people+plus));a.appendChild(document.createTextNode(' FROM PEOPLE'));bar.appendChild(a);
+    const n=mk('span');n.appendChild(mk('b',null,m.auto+plus));n.appendChild(document.createTextNode(' AUTOMATED · '+m.days+' DAYS'));bar.appendChild(n);
+    bar.title=rows.map(r=>r.name.toUpperCase()+' '+r.people+' / '+r.auto).join(' · ');
+  }
+  if((m.problems||[]).length)bar.appendChild(mk('span','hl amb','SIGN-IN NEEDED: '+m.problems.join(', ').toUpperCase()));
+}
+
+/* web search: what was asked and where the answer came from (titles and sites only; the extracts go to the model) */
+function searchCard(m){
+  const body=$('#searchBody');body.replaceChildren();
+  $('#searchSub').textContent=m.pending?'SEARCHING…':('TAVILY'+(m.left!=null?' · '+m.left+' LEFT':''));
+  if(m.pending){body.appendChild(emptyNote('SEARCHING','THE WEB'));return}
+  body.appendChild(mk('div','gtitle amb','“'+(m.query||'').toUpperCase()+'”'+(m.news?'  ·  NEWS':'')));
+  if(!(m.items||[]).length){body.appendChild(emptyNote('NO RESULTS','TRY ANOTHER SEARCH'));return}
+  for(const it of m.items){
+    const d=mk('div','gi');d.appendChild(mk('small',null,(it.site+(it.date?' · '+it.date:'')).toUpperCase()));
+    d.appendChild(document.createTextNode(it.title));d.title=it.title;body.appendChild(d)}
+}
+
+function draw(m){
+  switch(m.id){
+    case 'search': searchCard(m); break;
+    case 'tasks': todoCard(m); break;
+    case 'gym': gymCard(m); break;
+    case 'mail': mailCard(m); break;
+    case 'calendar': calendarCard(m); break;
+    case 'meals': meals=m; renderMeals(); break;
+    case 'games': gamesCard(m); break;
+    case 'localcard': localcard(m); break;
+    case 'timers': timerItems=m.items||[]; renderTimers(); break;
+  }
+}
+const lastCard={};
+function card(m){lastCard[m.id]=m;draw(m);if(briefOn)renderBrief()}
+
+/* ======================= the morning briefing =======================
+   The first time he speaks in the morning (or on "brief me") Jarvis publishes a briefing event and the six
+   briefing cards replace the columns. They're drawn from the cards the page already holds: nothing new is fetched. */
+let briefOn=false, briefTimer=null;
+const THANKS=/^\W*(thanks|thank you|cheers|that'?s (all|enough)|that will do|dismiss|close that)\b[\w\s,.!']{0,20}$/i;
+function bfill(id){const b=$('#'+id);b.replaceChildren();return b}
+function renderBrief(){
+  const L=lastCard.localcard||{}, w=L.weather;
+  let b=bfill('b1');
+  if(w){const t=mk('div','wx2');t.appendChild(mk('span','t',w.temp+'°'));t.appendChild(mk('span','s',w.sky.toUpperCase()));b.appendChild(t);
+    b.appendChild(row('HI / LO',w.hi+'° / '+w.lo+'°',''));b.appendChild(row('RAIN',w.rain+'%',w.rain>=50?'bad':''))}
+  for(const l of L.lines||[]){const bad=!l.ok&&!/closed/i.test(l.status);
+    b.appendChild(row(l.name.replace(/ line$/i,'').toUpperCase(),l.ok?'GOOD':l.status.toUpperCase(),bad?'bad':''))}
+  const tm=(lastCard.timers||{}).items||[];
+  if(tm.length){const box=mk('div','bsep');for(const t of tm.slice(0,2))box.appendChild(row((t.kind==='timer'?'⏱ ':'⏰ ')+t.label.toUpperCase(),leftText(t.due),''));b.appendChild(box)}
+  if(!w&&!(L.lines||[]).length)b.appendChild(emptyNote('WAITING','LOCAL'));
+
+  const C=lastCard.calendar||{};
+  $('#b2Sub').textContent=C.label||'TODAY'; b=bfill('b2');
+  if(C.error&&!(C.items||[]).length)b.appendChild(emptyNote(C.error,'GOOGLE CALENDAR'));
+  else if(!(C.items||[]).length)b.appendChild(emptyNote('NOTHING ON','TODAY OR TOMORROW'));
+  else{for(const it of C.items.slice(0,7)){const r=row(it.time,'','ell');r.querySelector('.v').textContent=it.title;r.title=it.title;b.appendChild(r)}
+    const more=C.items.length-7+(C.more||0);if(more>0)b.appendChild(mk('div','empty','+ '+more+' MORE'))}
+
+  const T=lastCard.tasks||{}; b=bfill('b3');
+  if(T.error)b.appendChild(emptyNote(T.error,'GOOGLE TASKS'));
+  else if(!(T.items||[]).length)b.appendChild(emptyNote('ALL CLEAR','NOTHING ON THE LIST'));
+  else{for(const it of T.items.slice(0,7))b.appendChild(row(it.title,it.when||'—','ell'+(it.late?' bad':'')));
+    const more=T.items.length-7+(T.more||0);if(more>0)b.appendChild(mk('div','empty','+ '+more+' MORE'))}
+
+  const M=lastCard.meals; b=bfill('b4');
+  if(!M||!(M.sections||[]).length)b.appendChild(emptyNote('WAITING','MEAL PLAN'));
+  else{const d=new Date(), now=d.getHours()*60+d.getMinutes();
+    for(const s of M.sections){b.appendChild(mk('div','mlabel',s.label));
+      if(s.error){b.appendChild(mk('div','empty',s.error));continue}
+      const items=s.items||[], cur=curMeal(items,now), start=Math.max(0,cur<0?0:cur);
+      for(let i=start;i<Math.min(items.length,start+2);i++)b.appendChild(mealRow(items,i,cur,now));
+      if(!items.length)b.appendChild(mk('div','empty','NOTHING LISTED'))}}
+
+  const G=lastCard.gym; b=bfill('b5');
+  if(!G)b.appendChild(emptyNote('WAITING','OPENGYM'));
+  else if(G.error)b.appendChild(emptyNote(G.error,'OPENGYM'));
+  else{$('#b5Sub').textContent=G.status==='DONE'?'DONE TODAY':G.status==='REST'?'REST DAY':'TODAY';
+    b.appendChild(mk('div','gtitle'+(G.status==='PLANNED'?' amb':''),(G.title||'').toUpperCase()));
+    if(G.detail)b.appendChild(mk('div','gdetail',G.detail.toUpperCase()));
+    for(const it of (G.items||[]).slice(0,3)){const r=row(it.name,(it.last||it.plan||'').toUpperCase(),'ell');r.title=it.name;b.appendChild(r)}
+    const gw=G.weight;if(gw){const st=gw.days>=7;const box=mk('div','gw');
+      box.appendChild(row('WEIGHT',gw.latest+' '+gw.unit.toUpperCase()+(gw.trend?' · '+gw.trend+'/WK':'')+(st?' · '+gw.days+'D AGO':''),st?'bad':''));b.appendChild(box)}}
+
+  const ML=lastCard.mail, GM=lastCard.games; b=bfill('b6');
+  if(ML){const plus=ML.capped?'+':'';
+    b.appendChild(row('FROM PEOPLE',ML.people+plus,ML.people?'':''));b.appendChild(row('AUTOMATED',ML.auto+plus,''));
+    for(const n of ML.problems||[])b.appendChild(row(n.toUpperCase(),'SIGN-IN NEEDED','bad'))}
+  else b.appendChild(emptyNote('WAITING','GMAIL'));
+  if(GM){const box=mk('div','bsep');box.appendChild(row('GAMES NEW',String(GM.new),''));box.appendChild(row('UNCOVERED',String(GM.uncovered),GM.uncovered?'bad':''));
+    const top=(GM.items||[])[0];if(top){const g=mk('div','gi');g.appendChild(mk('small',null,top.source.toUpperCase()));g.appendChild(document.createTextNode(top.title));g.title=top.title;box.appendChild(g)}
+    b.appendChild(box)}
+}
+/* Opened from the widget (?auto=1): the page asks Jarvis to close this window ~12 s after the card (or the briefing)
+   has gone back, i.e. about 20 s after the answer. Touching anything keeps it open. */
+const AUTO=new URLSearchParams(location.search).get('auto')==='1';
+let closeTimer=null, keepOpen=false;
+function armClose(){clearTimeout(closeTimer);if(AUTO&&!keepOpen&&!focusId&&!briefOn)closeTimer=setTimeout(()=>send({t:'close'}),12000)}
+function cancelClose(){clearTimeout(closeTimer)}
+if(AUTO)addEventListener('pointerdown',()=>{keepOpen=true;cancelClose()},true);
+function showBrief(){
+  cancelClose();
+  clearTimeout(briefTimer);
+  if(focusId)unfocus();
+  briefOn=true;renderBrief();document.body.classList.add('brief');
+}
+function hideBrief(){clearTimeout(briefTimer);if(!briefOn)return;briefOn=false;document.body.classList.remove('brief');armClose()}
+
+/* ask-and-show: the card a tool is about slides to the middle while Jarvis answers (the ring shrinks to an orb),
+   then goes back. Tapping a card brings it forward too; tapping it again, or Esc, sends it back. */
+const SLIM=new Set(['games','mail']);
+let focusId=null, focusTimer=null;
+const panelOf=id=>document.querySelector('.panel[data-card="'+id+'"]');
+function setFocused(id,on){const p=panelOf(id);if(!p)return;p.classList.toggle('focused',on);if(SLIM.has(id))p.classList.toggle('slim',!on)}
+function focusCard(id){
+  if(id==='briefing'){showBrief();return}
+  if(!panelOf(id))return;
+  cancelClose();
+  if(briefOn)hideBrief();
+  if(id==='search'&&focusId!=='search')lastCard.search={id:'search',pending:true};  // never show the last search while a new one runs
+  clearTimeout(focusTimer);
+  if(focusId===id)return;
+  const prev=focusId; focusId=id;
+  if(prev){setFocused(prev,false);if(lastCard[prev])draw(lastCard[prev])}
+  setFocused(id,true); if(lastCard[id])draw(lastCard[id]);
+  document.body.classList.add('focus');
+  if(state==='idle')focusTimer=setTimeout(unfocus,12000);
+}
+function unfocus(){
+  clearTimeout(focusTimer);
+  const id=focusId; if(!id)return;
+  focusId=null; setFocused(id,false); if(lastCard[id])draw(lastCard[id]);
+  document.body.classList.remove('focus');
+  armClose();
+}
+function holdFocus(s){  // called on every state change: how long the card stays forward
+  if(!focusId)return;
+  clearTimeout(focusTimer);
+  if(s==='idle')focusTimer=setTimeout(unfocus,8000);          // the answer is finished: a moment to read it
+  else if(s==='thinking')focusTimer=setTimeout(unfocus,7000); // a new question: back unless a tool brings one forward
+}
+document.querySelectorAll('.panel').forEach(p=>p.addEventListener('click',()=>{
+  if(p.classList.contains('bp')){hideBrief();return}
+  const id=p.dataset.card; if(focusId===id)unfocus(); else focusCard(id)}));
+addEventListener('keydown',e=>{if(e.key==='Escape'){unfocus();hideBrief()}});
+
+function link(up){$('#iLink').textContent=up?'LIVE':'LOST';$('#linkDot').classList.toggle('off',!up);
+  $('#iLink').parentNode.classList.toggle('bad',!up)}
+function connect(){
+  ws=new WebSocket(`ws://${location.host}/ws${AUTO?'?claim=1':''}`);
+  ws.onopen=()=>{link(true);send({t:'seen',v:!paused})};
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}
+    switch(m.t){
+      case 'hello':
+        talkEnabled=!!m.talk; info(m.info||{});
+        $('#hint').textContent=!talkEnabled?'TEXT MODE · TYPE IN THE CONSOLE'
+          :(m.info||{}).wake?'SAY “HEY JARVIS” · OR HOLD THE RING / F9':'HOLD THE RING OR F9 TO SPEAK';
+        setState(m.state||'idle'); showReplyNow(m.reply||[]); $('#heard').textContent=m.heard||'';
+        Object.values(m.cards||{}).forEach(card);
+        document.body.classList.add('on');
+        if(m.focus)focusCard(m.focus);   // opened from the widget for this card (or the briefing)
+        else armClose();
+        break;
+      case 'state': setState(m.s); break;
+      case 'heard': clearReply(); $('#heard').textContent=m.text; if(briefOn&&THANKS.test(m.text))hideBrief(); break;
+      case 'briefing': showBrief(); break;
+      case 'say': addSentence(m.text); break;
+      case 'level':
+        if(m.src==='mic'){micLevel=m.v;micAt=performance.now()} else {voiceLevel=m.v;voiceAt=performance.now()} break;
+      case 'info': info(m); break;
+      case 'notice': flash(m.text.toUpperCase()); break;
+      case 'card': card(m); break;
+      case 'focus': focusCard(m.card); break;
+      case 'show': if(m.card)focusCard(m.card); break;   // asked for from the widget while this window is open
+      case 'turn':
+        if(m.first_audio_s!=null)$('#iLat').textContent=m.first_audio_s.toFixed(2)+' S'; break;
+    }};
+  ws.onclose=()=>{link(false);setState('offline');releaseTalk();setTimeout(connect,2000)};
+  ws.onerror=()=>{try{ws.close()}catch(_){}};
+}
+
+/* hold the ring to talk (mouse or touch) */
+const core=$('#core'); let held=false;
+function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function releaseTalk(){if(held){held=false;core.classList.remove('held');send({t:'talk',a:'up'})}}
+core.addEventListener('pointerdown',e=>{
+  if(!talkEnabled){flash('TALK BUTTON NEEDS VOICE MODE');return}
+  if(held||!ws||ws.readyState!==1)return;
+  held=true;core.classList.add('held');core.setPointerCapture(e.pointerId);send({t:'talk',a:'down'})});
+['pointerup','pointercancel','lostpointercapture'].forEach(n=>core.addEventListener(n,releaseTalk));
+addEventListener('blur',releaseTalk);
+core.addEventListener('contextmenu',e=>e.preventDefault());
+
+/* fit the 1280x720 design to the window */
+let redrawT=null;
+function fit(){const w=innerWidth,h=innerHeight;if(w<50||h<50){setTimeout(fit,250);return}
+  document.documentElement.style.setProperty('--s',Math.min(w/1280,h/720).toFixed(4));
+  // the rings are bitmaps: repaint them at the new size once resizing settles
+  clearTimeout(redrawT);redrawT=setTimeout(redrawRings,redrawT===null?0:200)}
+addEventListener('resize',fit); fit();
+
+setState('offline'); connect(); setTimeout(sweep,200);
+</script>
+</body>
+</html>

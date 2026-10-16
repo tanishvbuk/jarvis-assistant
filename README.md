@@ -4,6 +4,12 @@ A personal push-to-talk voice assistant for Windows. Hold a key, speak, and hear
 
 > I have no real coding background beyond the basics; Claude Code wrote this under my direction. It works for me on one Windows 11 laptop, so expect rough edges. I'd like to port it to a Raspberry Pi eventually. Suggestions (design, safety, optimisation) are very welcome.
 
+![The HUD, with invented demo data](docs/hud.png)
+
+<img src="docs/widget.png" width="260" alt="The desktop widget">
+
+*Screenshots use invented demo data.*
+
 Rough shape: wake word ("Hey Jarvis") or push-to-talk, then cloud speech-to-text, an LLM with tools (email, calendar, to-dos, timers, web search, a gym tracker, a mobile-games news digest), then a local British voice with a "voice in the walls" effect. A sci-fi HUD (adapted from A.L.I.C.E.) shows what it's doing, and there's a small round glass widget for the desktop.
 
 ## Setup on Windows

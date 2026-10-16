@@ -106,7 +106,6 @@ body{font-family:Bahnschrift,"DIN Alternate","Arial Narrow",ui-sans-serif,sans-s
 .p-cal  {--x:60px;  --y:386px; --w:340px;--h:238px}
 .p-meals{--x:880px; --y:76px;  --w:340px;--h:298px}
 .p-gym  {--x:880px; --y:386px; --w:340px;--h:238px}
-.p-games{--x:60px;  --y:636px; --w:574px;--h:42px}
 .p-mail {--x:646px; --y:636px; --w:574px;--h:42px}
 /* the search card has no place of its own: it only ever appears forward */
 .p-search{--x:240px;--y:76px;--w:800px;--h:424px}
@@ -174,11 +173,6 @@ body.focus .panel:not(.focused){opacity:.14}
 .empty b{display:block;font-weight:300;color:var(--amb);opacity:.9;margin-bottom:4px;
   text-shadow:0 0 6px var(--amb2)}
 .row.tight{line-height:1.6}
-/* games list when the card is forward */
-.gi{font-size:calc(12px*var(--ts));line-height:1.35;color:var(--hot);margin-top:8px;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;text-shadow:0 0 3px var(--hot),0 0 10px var(--g1)}
-.gi small{display:block;font-size:calc(9px*var(--ts));letter-spacing:.22em;color:var(--cy2);text-shadow:none}
-.gi.cov{opacity:.5}
 .mgrid{display:grid;gap:22px}
 .mlabel{font-size:calc(10px*var(--ts));letter-spacing:.3em;color:var(--amb);margin-bottom:6px;text-shadow:0 0 6px var(--amb2)}
 .row.ell .k{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
@@ -301,9 +295,6 @@ body.paused *{animation-play-state:paused!important}
     <div class="hdr">GYM <span id="gymSub">TODAY</span></div>
     <div id="gymBody"><div class="empty"><b>WAITING</b>OPENGYM</div></div>
   </div></div></div>
-  <div class="panel slim p-games" data-card="games"><div class="frame"><div class="fb"></div><div class="fi"></div><div class="c" id="gamesBar">
-    <span class="lbl">GAMES</span><span class="hl" id="gHead">WAITING FOR THE FIRST CHECK</span>
-  </div></div></div>
   <div class="panel slim p-mail" data-card="mail"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c" id="mailBar">
     <span class="lbl">MAIL</span><span class="hl">WAITING</span>
   </div></div></div>
@@ -328,7 +319,7 @@ body.paused *{animation-play-state:paused!important}
     <div class="hdr">GYM <span id="b5Sub">TODAY</span></div><div id="b5"></div>
   </div></div></div>
   <div class="panel bp p-b6"><div class="frame flip"><div class="fb"></div><div class="fi"></div><div class="c">
-    <div class="hdr">MAIL · GAMES <span>OVERNIGHT</span></div><div id="b6"></div>
+    <div class="hdr">MAIL <span>OVERNIGHT</span></div><div id="b6"></div>
   </div></div></div>
   <div id="briefHint">SAY “THANKS” · OR TAP A CARD TO DISMISS</div>
 
@@ -675,31 +666,6 @@ function renderMeals(){
 }
 setInterval(()=>{if(meals&&(meals.sections||[]).length>1&&focusId!=='meals'){mealsPage++;renderMeals()}},12000);
 setInterval(renderMeals,30000);
-/* games digest: one headline cycling in the strip; brought forward, the whole list */
-let gameItems=[], gameAt=0;
-function showGame(){
-  const head=$('#gHead'); if(!head)return;
-  if(!gameItems.length){head.textContent='ALL CAUGHT UP';return}
-  gameAt%=gameItems.length; const it=gameItems[gameAt];
-  head.textContent=it.source.toUpperCase()+(it.covered?' · COVERED':'')+'  ›  '+it.title; head.title=it.title;
-}
-setInterval(()=>{if(gameItems.length>1&&focusId!=='games'){gameAt++;showGame()}},8000);
-function gamesCard(m){
-  gameItems=m.items||[];
-  const bar=$('#gamesBar');bar.replaceChildren();
-  if(focusId==='games'){
-    const h=mk('div','hdr','GAMES ');h.appendChild(mk('span',null,m.new+' NEW · '+m.uncovered+' UNCOVERED'));bar.appendChild(h);
-    if(!gameItems.length){const e=mk('div','empty');e.appendChild(mk('b',null,'ALL CAUGHT UP'));
-      e.appendChild(document.createTextNode('NOTHING SINCE THE LAST DIGEST'));bar.appendChild(e)}
-    for(const it of gameItems){const d=mk('div','gi'+(it.covered?' cov':''));
-      d.appendChild(mk('small',null,(it.source+(it.covered?' · COVERED':'')).toUpperCase()));
-      d.appendChild(document.createTextNode(it.title));d.title=it.title;bar.appendChild(d)}
-    return}
-  bar.appendChild(mk('span','lbl','GAMES'));
-  const a=mk('span');a.appendChild(mk('b',null,String(m.new)));a.appendChild(document.createTextNode(' NEW'));bar.appendChild(a);
-  const b=mk('span');b.appendChild(mk('b','amb',String(m.uncovered)));b.appendChild(document.createTextNode(' UNCOVERED'));bar.appendChild(b);
-  const h=mk('span','hl');h.id='gHead';bar.appendChild(h);showGame();
-}
 /* localcard card: weather and lines from the localcard card, countdowns from the timers card */
 function row(k,v,cls){const r=mk('div','row tight'+(cls?' '+cls:''));r.appendChild(mk('span','k',k));r.appendChild(mk('span','v',v));return r}
 function localcard(m){
@@ -813,7 +779,6 @@ function draw(m){
     case 'mail': mailCard(m); break;
     case 'calendar': calendarCard(m); break;
     case 'meals': meals=m; renderMeals(); break;
-    case 'games': gamesCard(m); break;
     case 'localcard': localcard(m); break;
     case 'timers': timerItems=m.items||[]; renderTimers(); break;
   }
@@ -870,14 +835,11 @@ function renderBrief(){
     const gw=G.weight;if(gw){const st=gw.days>=7;const box=mk('div','gw');
       box.appendChild(row('WEIGHT',gw.latest+' '+gw.unit.toUpperCase()+(gw.trend?' · '+gw.trend+'/WK':'')+(st?' · '+gw.days+'D AGO':''),st?'bad':''));b.appendChild(box)}}
 
-  const ML=lastCard.mail, GM=lastCard.games; b=bfill('b6');
+  const ML=lastCard.mail; b=bfill('b6');
   if(ML){const plus=ML.capped?'+':'';
     b.appendChild(row('FROM PEOPLE',ML.people+plus,ML.people?'':''));b.appendChild(row('AUTOMATED',ML.auto+plus,''));
     for(const n of ML.problems||[])b.appendChild(row(n.toUpperCase(),'SIGN-IN NEEDED','bad'))}
   else b.appendChild(emptyNote('WAITING','GMAIL'));
-  if(GM){const box=mk('div','bsep');box.appendChild(row('GAMES NEW',String(GM.new),''));box.appendChild(row('UNCOVERED',String(GM.uncovered),GM.uncovered?'bad':''));
-    const top=(GM.items||[])[0];if(top){const g=mk('div','gi');g.appendChild(mk('small',null,top.source.toUpperCase()));g.appendChild(document.createTextNode(top.title));g.title=top.title;box.appendChild(g)}
-    b.appendChild(box)}
 }
 /* Opened from the widget (?auto=1): the page asks Jarvis to close this window ~12 s after the card (or the briefing)
    has gone back, i.e. about 20 s after the answer. Touching anything keeps it open. */
@@ -896,7 +858,7 @@ function hideBrief(){clearTimeout(briefTimer);if(!briefOn)return;briefOn=false;d
 
 /* ask-and-show: the card a tool is about slides to the middle while Jarvis answers (the ring shrinks to an orb),
    then goes back. Tapping a card brings it forward too; tapping it again, or Esc, sends it back. */
-const SLIM=new Set(['games','mail']);
+const SLIM=new Set(['mail']);
 let focusId=null, focusTimer=null;
 const panelOf=id=>document.querySelector('.panel[data-card="'+id+'"]');
 function setFocused(id,on){const p=panelOf(id);if(!p)return;p.classList.toggle('focused',on);if(SLIM.has(id))p.classList.toggle('slim',!on)}

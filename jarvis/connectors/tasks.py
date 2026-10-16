@@ -1,6 +1,6 @@
 """The to-do list, in Google Tasks (so it's on the user's phone too).
 
-"Add to my list: pitch the cosy games feature, due Friday" adds straight away and
+"Add to my list: book the dentist, due Friday" adds straight away and
 is read back; "undo that" reverses the last add, tick-off or move. Deleting a
 task needs a spoken yes in the next turn (as calendar changes do).
 

@@ -96,50 +96,12 @@ max_results = 10            # per account, newest first
 cache_seconds = 120         # repeat questions within this time don't refetch
 
 [meal_plan]
-# The dietitian's weekly plans in Google Sheets (read-only). The sheets are listed in
+# Weekly meal plans in a Google Sheets spreadsheet (read-only). The sheets are listed in
 # config.local.toml. Jarvis answers "what's for dinner?" from one day's meals, and the HUD
 # shows today's meals; the rest of the sheet (recipes, groceries, tracker) is never read out.
 enabled = true
 cache_seconds = 600         # fetch each sheet at most every 10 minutes
 hud_card = true             # show today's meals on the HUD
-
-[games]
-# Mobile games news digest from public feeds (read-only). Polled in the background while
-# Jarvis runs; what's been seen is kept in data/games.json. Ask "what's new in mobile games?".
-enabled = true
-keep_days = 30
-hud_card = true
-
-[games.sources.gamespress]
-label = "GamesPress"
-kind = "rss"
-url = "https://www.gamespress.com/News/RSS"   # only the latest 20 items (a few hours), so check often
-every_minutes = 60
-mobile_filter = true        # all platforms: keep only items mentioning iOS, Android, mobile...
-
-[games.sources.pokemongo]
-label = "Pokémon GO news"
-kind = "pokemongo"          # no feed: reads the post titles and dates on the news page
-url = "https://pokemongo.com/news"
-every_minutes = 360
-
-[games.sources.gamezebo]
-label = "Gamezebo"
-kind = "rss"
-url = "https://www.gamezebo.com/feed/"
-every_minutes = 180
-
-[games.sources.droidgamers]
-label = "Droid Gamers"
-kind = "rss"
-url = "https://www.droidgamers.com/feed/"
-every_minutes = 180
-
-[games.sources.mobilegamer]
-label = "mobilegamer.biz"
-kind = "rss"
-url = "https://mobilegamer.biz/feed/"
-every_minutes = 180
 
 [calendar]
 # Reads every Google account's calendars. Accounts with "calendar_write" in their services

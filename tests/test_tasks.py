@@ -69,8 +69,8 @@ def todo(tmp_path):
 def test_add_with_and_without_a_deadline(todo):
     assert todo.todo({"action": "add", "title": "Order more pasta"}) == \
         "Added: Order more pasta, no deadline. (He can say 'undo that'.)"
-    out = todo.todo({"action": "add", "title": "Pitch the cosy games feature", "due": "2026-10-16"})
-    assert out.startswith("Added: Pitch the cosy games feature, due Friday 16 October.")
+    out = todo.todo({"action": "add", "title": "Book the dentist", "due": "2026-10-16"})
+    assert out.startswith("Added: Book the dentist, due Friday 16 October.")
     body = todo.fake.calls[-1][1]
     assert body["due"] == "2026-10-16T00:00:00.000Z" and "Added by Jarvis." in body["notes"]
 
@@ -86,7 +86,7 @@ def test_timed_deadline_gets_a_reminder_an_hour_before(todo):
 
 
 def test_reminders_follow_the_task_whatever_its_title(todo):
-    title = "Send the long-form feature on the history of match-three puzzle games to the commissioning editor"
+    title = "Send the long annual report on the history of the project to the client"
     todo.todo({"action": "add", "title": title, "due": "2026-10-12T17:00"})
     assert len(todo.timer_skill.state["timers"]) == 1  # its label is cut to 80 characters
     todo.todo({"action": "done", "task": "that"})
@@ -123,13 +123,13 @@ def test_list_soonest_first_and_scopes(todo):
 
 
 def test_done_move_and_undo(todo):
-    todo.todo({"action": "add", "title": "Pitch the cosy games feature", "due": "2026-10-16"})
-    assert todo.todo({"action": "move", "task": "cosy", "due": "2026-10-19"}) == \
-        "Moved: Pitch the cosy games feature, now due Monday 19 October."
-    assert todo.todo({"action": "undo"}) == "Undone: Pitch the cosy games feature is back to due Friday 16 October."
-    assert todo.todo({"action": "done", "task": "that"}) == "Ticked off: Pitch the cosy games feature."
+    todo.todo({"action": "add", "title": "Book the dentist", "due": "2026-10-16"})
+    assert todo.todo({"action": "move", "task": "dentist", "due": "2026-10-19"}) == \
+        "Moved: Book the dentist, now due Monday 19 October."
+    assert todo.todo({"action": "undo"}) == "Undone: Book the dentist is back to due Friday 16 October."
+    assert todo.todo({"action": "done", "task": "that"}) == "Ticked off: Book the dentist."
     assert todo.fake.open_tasks() == []
-    assert todo.todo({"action": "undo"}) == "Undone: Pitch the cosy games feature is back on the list."
+    assert todo.todo({"action": "undo"}) == "Undone: Book the dentist is back on the list."
     assert len(todo.fake.open_tasks()) == 1
     with pytest.raises(ToolError, match="nothing to undo"):
         todo.todo({"action": "undo"})

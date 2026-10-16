@@ -225,12 +225,12 @@ def test_connector_notes_go_into_the_system_prompt(cfg):
             seen.append(system)
             return super().stream(messages, system=system, max_tokens=max_tokens, tools=tools)
 
-    notes = iter(["There are 3 new mobile games items.", None])
+    notes = iter(["There are 3 new items.", None])
     a = Assistant(cfg, Capture(["Good morning."], ["Indeed."]),
                   notes=[lambda: next(notes), lambda: (_ for _ in ()).throw(RuntimeError("broken note"))])
     run(a)
     run(a)
-    assert seen[0].endswith("Before answering, briefly: There are 3 new mobile games items.")
+    assert seen[0].endswith("Before answering, briefly: There are 3 new items.")
     assert "Before answering" not in seen[1]
 
 

@@ -263,7 +263,7 @@ def test_undo_after_the_phone_saved_keeps_the_phones_change(gym):
     assert all(b["d"] != "2026-10-15" for b in s["bodyweight"]) and s["dayPlan"]["2026-10-20"] == "r2"
 
 
-# ------------------------------------------------------------------ the dietitian's sheet
+# ------------------------------------------------------------------ the meal-plan sheet
 
 def test_sheet_weigh_ins_are_copied_once_and_typos_flagged(gym):
     gym.meal_plan.entries = [WeighIn(date(2026, 7, 6), 57.1, "06/07/2026"), WeighIn(date(2026, 9, 1), 57.4, "x"),
@@ -273,12 +273,12 @@ def test_sheet_weigh_ins_are_copied_once_and_typos_flagged(gym):
     assert days["2026-07-06"] == 57.1 and days["2026-09-01"] == 57.5 and "2026-12-09" not in days
     note = gym.daily_note()
     assert "dated Wednesday 9 December 2026" in note and "dated 'sometime'" in note
-    assert "copied 1 weigh-in from his dietitian's sheet into openGym (latest 57.1 kg on Monday 6 July)" in note
+    assert "copied 1 weigh-in from his meal-plan sheet into openGym (latest 57.1 kg on Monday 6 July)" in note
     # Deleted in the app afterwards: not copied again. And the December typo stays skipped after December.
     gym.server.state["bodyweight"] = [b for b in gym.server.state["bodyweight"] if b["d"] != "2026-07-06"]
     assert gym.sync_sheet() == 0
     assert "2026-07-06" not in {b["d"] for b in gym.server.state["bodyweight"]}
-    assert gym.daily_note() is None or "dietitian" not in gym.daily_note()
+    assert gym.daily_note() is None or "meal-plan sheet" not in gym.daily_note()
 
 
 def test_sync_runs_from_tick_and_waits_after_a_failure(gym):
@@ -313,7 +313,7 @@ def test_pace_note_when_gain_is_too_slow_at_most_weekly(gym):
     gym.tick()
     note = gym.daily_note()
     assert "Weight check:" in note and "too slowly (goal 65 kg; a usual steady pace is 0.25 to 0.5 kg a week)" in note
-    assert "dietitian" in note
+    assert "whoever set the plan" in note
     gym.tick()
     assert "Weight check" not in (gym.daily_note() or "")
 

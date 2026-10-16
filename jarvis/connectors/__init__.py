@@ -40,14 +40,6 @@ def build_connectors(cfg: Config) -> list[Connector]:
                 out.append(MealPlanConnector(plans, accounts, google_auth(cfg),
                                              cache_seconds=float(cfg.meal_plan.get("cache_seconds", 600)),
                                              hud_card=bool(cfg.meal_plan.get("hud_card", True))))
-    if cfg.games.get("enabled", True):
-        from .games import GamesConnector, sources_from_config
-
-        sources = sources_from_config(cfg.games)
-        if sources:
-            out.append(GamesConnector(sources, cfg.root / cfg.games.get("store", "data/games.json"),
-                                      keep_days=int(cfg.games.get("keep_days", 30)),
-                                      hud_card=bool(cfg.games.get("hud_card", True))))
     if cfg.google.get("enabled", True) and cfg.tasks.get("enabled", True):
         owner = next((a for a in accounts_from_config(cfg.google) if "tasks" in a.services), None)
         if owner:
@@ -92,9 +84,6 @@ def connector_status(cfg: Config, connectors: list[Connector]) -> str:
             continue
         if c.name == "currency":
             parts.append("currency (ECB daily rates)")
-            continue
-        if hasattr(c, "sources"):  # games: count the feeds
-            parts.append(f"{c.name} ({len(c.sources)} feeds)")
             continue
         if c.name == "calendar":
             needs = [n for n in c.writable if not auth.has_scope(c.accounts[n], "calendar_write")]

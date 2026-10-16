@@ -54,7 +54,7 @@ def test_search_asks_tavily_and_returns_untrusted_extracts(tmp_path):
 
 def test_news_searches_use_the_news_topic_and_the_past_week(tmp_path):
     c = make(tmp_path)
-    c.web_search({"query": "games news", "news": True})
+    c.web_search({"query": "football results", "news": True})
     body = c.fake.calls[0][2]
     assert body["topic"] == "news" and body["time_range"] == "week"
 

@@ -1,4 +1,4 @@
-"""Meal plan connector against fake sheets shaped like the dietitian's (invented meals)."""
+"""Meal plan connector against fake sheets shaped like a meal-plan spreadsheet (invented meals)."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def week(start: date, rows: list[tuple]) -> list[list]:
             ["", ""] + days]
     for t, label, food in rows:
         grid.append([t, label] + ([food(i) for i in range(7)] if callable(food) else [food] * 7))
-    grid += [[], ["RECIPES", "", "", "", "MAJOR GROCERY LIST", "", "", "DIETITIAN ASSIGNED :"], [],
-             ["", "", "", "", "secret grocery list", "", "", "dietitian phone"]]
+    grid += [[], ["RECIPES", "", "", "", "MAJOR GROCERY LIST", "", "", "PLAN OWNER :"], [],
+             ["", "", "", "", "secret grocery list", "", "", "contact phone"]]
     return grid
 
 
@@ -74,7 +74,7 @@ def test_older_weeks_and_missing_days():
 
 def test_recipes_and_grocery_list_are_never_included():
     _, meals = find_day(MINE, date(2026, 10, 5))
-    assert not any("grocery" in m.food or "dietitian" in m.food for m in meals)
+    assert not any("grocery" in m.food or "contact" in m.food for m in meals)
 
 
 class FakeSheets:

@@ -1,6 +1,6 @@
 """Meal plans from Google Sheets, read-only.
 
-The dietitian's sheets have one tab per week, a row of dates across the top and
+The meal-plan sheets have one tab per week, a row of dates across the top and
 the meals down the side, but the meal names and times change from week to week.
 So nothing here assumes cell positions: it looks through every tab for the
 requested date (as a real date value, so day/month order can't be misread) and
@@ -108,7 +108,7 @@ def _swapped(d: date) -> date | None:
 def _cell_date(v) -> date | None:
     """A date cell: a serial number, or text typed day first ("26/07/2026", "10/7/2026").
 
-    The dietitian's sheets are set to US order, so a date typed day first comes out swapped
+    The meal-plan sheets are set to US order, so a date typed day first comes out swapped
     whenever both numbers are 12 or under ("10/7" became 7 October). WeighIn.alt keeps the
     other reading; resolve_days() in the openGym connector picks between them."""
     if _is_num(v) and v > 20000:
@@ -242,7 +242,7 @@ class MealPlanConnector:
         people = "; ".join(f"{p.name}" + (f" ({p.who})" if p.who else "") for p in self.plans.values())
         spec = ToolSpec(
             name="meal_plan",
-            description=f"The dietitian's meal plan for one day, every meal with its time. Plans: {people}.",
+            description=f"The meal plan for one day, every meal with its time. Plans: {people}.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -272,7 +272,7 @@ class MealPlanConnector:
         found = find_day(self.grids(plan), day)
         if found is None:
             return untrusted("the meal plan sheet",
-                             f"Meal plan for {who}: {when} isn't in the plan (the dietitian may not have added "
+                             f"Meal plan for {who}: {when} isn't in the plan (the plan may not have added "
                              "that week yet).")
         tab, meals = found
         lines = [f"Meal plan for {who}, {when} (sheet tab {tab}):"]

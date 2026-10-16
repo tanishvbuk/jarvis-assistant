@@ -1,7 +1,7 @@
 """openGym: his self-hosted gym tracker (plan, sessions, body weight), through its own web API.
 
 Reads his weekly plan, logged sessions and weigh-ins. The one thing it writes is
-body weight: a weigh-in he says out loud, and the weigh-ins his dietitian logs in
+body weight: a weigh-in he says out loud, and the weigh-ins the meal-plan sheet logs in
 the meal plan sheet's tracker tab, copied across every few hours. It never
 touches his plan or sessions.
 
@@ -255,7 +255,7 @@ class OpenGymConnector:
                  hud_card: bool = True, now: Callable[[], datetime] | None = None, clock: Callable[[], float] = time.monotonic):
         self.client = client
         self.library = library
-        self.meal_plan = meal_plan      # the meal plan connector, for the dietitian's weigh-ins
+        self.meal_plan = meal_plan      # the meal plan connector, for the meal-plan sheet's weigh-ins
         self.sheet_plan = sheet_plan
         self.sync_s = sync_hours * 3600
         self.hud_card = hud_card
@@ -569,7 +569,7 @@ class OpenGymConnector:
         self._changed()
         return f"Undone: the weigh-in of {fmt(entry['w'])} is removed" + (", and the earlier one is back." if prev else ".")
 
-    # ---- background: renew the token, copy the dietitian's weigh-ins, prepare the notes
+    # ---- background: renew the token, copy the meal-plan sheet's weigh-ins, prepare the notes
 
     def tick(self) -> None:
         if self._clock() >= self._renew_at and self.client.session().get("token"):
@@ -647,7 +647,7 @@ class OpenGymConnector:
         return card
 
     def sync_sheet(self) -> int:
-        """Copy the dietitian's new weigh-ins into openGym. Each sheet row is copied once (rows are known by what's
+        """Copy the meal-plan sheet's new weigh-ins into openGym. Each sheet row is copied once (rows are known by what's
         in their cells, not by the date worked out for them); days that already have a weigh-in are left alone.
         Returns how many were added."""
         entries = self.meal_plan.weigh_ins(self.sheet_plan)
@@ -664,7 +664,7 @@ class OpenGymConnector:
                     seen[key] = None  # never copied, even once a future date has passed: it's a typo
                     what = (spoken(e.day, "%A %d %B %Y") + (f" or {spoken(e.alt, '%A %d %B %Y')}" if e.alt else "")
                             if e.day else repr(e.raw_date))
-                    self._news.append(f"His dietitian's sheet has a weigh-in ({fmt(e.kg)} kg) dated {what}, which "
+                    self._news.append(f"His meal-plan sheet has a weigh-in ({fmt(e.kg)} kg) dated {what}, which "
                                       "doesn't fit the log (in the future, or out of order), so it wasn't copied into "
                                       "openGym (probably a typo). Mention it once, briefly.")
                 else:
@@ -694,7 +694,7 @@ class OpenGymConnector:
                 if added:
                     last = max(added, key=lambda b: b["d"])
                     self._news.append(f"Jarvis copied {len(added)} weigh-in{'s' * (len(added) != 1)} from his "
-                                      f"dietitian's sheet into openGym (latest {fmt(last['w'])} {unit} on "
+                                      f"meal-plan sheet into openGym (latest {fmt(last['w'])} {unit} on "
                                       f"{spoken(date.fromisoformat(last['d']))}). Mention it once, briefly.")
             write_state(self.sync_file, ledger)
         return len(added)
@@ -744,7 +744,7 @@ class OpenGymConnector:
             f"Weight check: over the last {PACE_DAYS // 7} weeks he's moved {self._signed(round(rate, 2))} {unit} a week, "
             f"{how} (goal {fmt(float(goal))} {unit}; a usual steady pace is {fmt(lo * per)} to {fmt(hi * per)} {unit} "
             "a week). Mention it once, briefly. If he wants to change it, his meals are the lever: you can look at "
-            "his meal plan with him, but suggest he takes changes to his dietitian rather than prescribing food.")
+            "his meal plan with him, but suggest he takes changes to whoever set the plan rather than prescribing food.")
 
     def daily_note(self) -> str | None:
         with self._lock:

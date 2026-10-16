@@ -5,7 +5,7 @@ Two ways in, both ending in the same compact text for the model to speak:
 * The first time he speaks to Jarvis in the morning (between `from_hour` and `until_hour`, by the wake word,
   the key or the HUD ring) the voice loop calls activate(). That takes over the HUD with the briefing screen at
   once, and the first turn's system prompt carries the briefing (daily_note()), together with every other
-  once-a-day mention (games, gym, tasks, embargoes), so they're said once, as part of it, not one after another.
+  once-a-day mention (gym, tasks, embargoes), so they're said once, as part of it, not one after another.
 * The `briefing` tool, for "good morning", "brief me" or "what's on today", any time.
 
 The data is what the HUD cards already hold: each connector's card() (cached underneath), so nothing new is
@@ -33,8 +33,8 @@ log = logging.getLogger(__name__)
 PREPARE_S = 900     # how old prepared text may be before it's put together again
 NOTE_HEAD = ("This is his first activation today, so give his morning briefing first, from the briefing result "
              "that comes with his message: three to five short spoken sentences, most important first (anything "
-             "overdue or due today, the first event, rain or a disrupted line only if there is one, then a clause "
-             "each for gym, mail (say how many are from people) and games). No lists, and don't read it all out: it is also on his screen. Then deal "
+             "overdue or due today, the first event, then a clause "
+             "each for gym and mail (say how many are from people)). No lists, and don't read it all out: it is also on his screen. Then deal "
              "with what he said, if anything.")
 
 
@@ -44,7 +44,7 @@ class Briefing:
     def __init__(self, parts: dict[str, object], *, data_dir: Path | None = None, enabled: bool = True,
                  from_hour: int = 5, until_hour: int = 12, meals: bool = True, others: list | None = None,
                  now: Callable[[], datetime] | None = None, clock: Callable[[], float] = time.monotonic):
-        self.parts = parts              # connectors by name: calendar, tasks, meal_plan, gmail, opengym, games, timers
+        self.parts = parts              # connectors by name: calendar, tasks, meal_plan, gmail, opengym, timers
         self.enabled = enabled
         self.from_hour, self.until_hour = from_hour, until_hour
         self.meals = meals
@@ -62,7 +62,7 @@ class Briefing:
     def tools(self) -> list[Tool]:
         spec = ToolSpec(
             name="briefing",
-            description=("His briefing for the day: weather, Tube, calendar, to-do, meals, gym, mail and games news. "
+            description=("His briefing for the day: calendar, to-do, meals, gym and mail. "
                          "For 'good morning', 'brief me', 'what's on today'. Speak it in a few sentences."),
             parameters={"type": "object", "properties": {}})
         return [Tool(spec=spec, run=self.briefing, notice="Putting the briefing together", focus="briefing", reads_outside=True)]
@@ -96,7 +96,7 @@ class Briefing:
         """What to do on the armed turn (once). The briefing itself goes in as a tool result (prelude()), not here:
         it holds calendar titles, task names and headlines that other people wrote, which don't belong in the system
         prompt. The other connectors' once-a-day mentions are used up here so nothing repeats the briefing; those that
-        carry fetched text (the games digest) are dropped, since the briefing already holds that, and the rest (a
+        carry fetched text are dropped, since the briefing already holds that, and the rest (a
         count of embargoes, a weigh-in copied from the sheet) are added."""
         if not self._armed:
             return None
@@ -159,8 +159,7 @@ class Briefing:
     def compile(self) -> str:
         now = self._now()
         lines = [f"Briefing for {spoken(now, '%A %d %B')}; it is {now:%H:%M} local time."]
-        for build in (self._calendar, self._tasks, self._gym, self._meals, self._mail, self._games,
-                      self._timers):
+        for build in (self._calendar, self._tasks, self._gym, self._meals, self._mail, self._timers):
             try:
                 line = build(now)
             except Exception as e:  # one section never spoils the rest
@@ -247,14 +246,6 @@ class Briefing:
             out += " Needs signing in again: " + ", ".join(c["problems"]) + "."
         return out
 
-    def _games(self, now) -> str | None:
-        c = self._card("games")
-        if not c:
-            return None
-        if not c.get("new"):
-            return "Games news: nothing new since the last digest."
-        top = (c.get("items") or [{}])[0].get("title")
-        return f"Games news: {c['new']} new, {c['uncovered']} not covered by the reference outlet yet" + (f"; top: {top}" if top else "") + "."
 
     def _timers(self, now) -> str | None:
         c = self._card("timers")

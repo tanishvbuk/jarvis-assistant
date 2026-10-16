@@ -53,7 +53,6 @@ class Config:
     google: dict = field(default_factory=dict)
     gmail: dict = field(default_factory=dict)
     meal_plan: dict = field(default_factory=dict)
-    games: dict = field(default_factory=dict)
     timers: dict = field(default_factory=dict)
     calendar: dict = field(default_factory=dict)
     tasks: dict = field(default_factory=dict)
@@ -122,7 +121,6 @@ def load_config(path: Path | None = None, env_file: Path | None = None, provider
         google=raw.get("google", {}),
         gmail=raw.get("gmail", {}),
         meal_plan=raw.get("meal_plan", {}),
-        games=raw.get("games", {}),
         timers=raw.get("timers", {}),
         calendar=raw.get("calendar", {}),
         tasks=raw.get("tasks", {}),

@@ -193,7 +193,7 @@ class GmailConnector:
         embargo = ToolSpec(
             name="find_embargoes",
             description=(
-                "Emails mentioning a press embargo (he's a games journalist): sender, subject, arrival and only "
+                "Emails mentioning a press embargo: sender, subject, arrival and only "
                 "the embargo sentences. To diary one, use calendar_change, one event per call."),
             parameters={"type": "object", "properties": {
                 "days": {"type": "integer", "minimum": 1, "maximum": 30, "description": "default 14"},

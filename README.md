@@ -10,7 +10,7 @@ A personal push-to-talk voice assistant for Windows. Hold a key, speak, and hear
 
 *Screenshots use invented demo data.*
 
-Rough shape: wake word ("Hey Jarvis") or push-to-talk, then cloud speech-to-text, an LLM with tools (email, calendar, to-dos, timers, web search, a gym tracker, a mobile-games news digest), then a local British voice with a "voice in the walls" effect. A sci-fi HUD (adapted from A.L.I.C.E.) shows what it's doing, and there's a small round glass widget for the desktop.
+Rough shape: wake word ("Hey Jarvis") or push-to-talk, then cloud speech-to-text, an LLM with tools (email, calendar, to-dos, timers, web search, a gym tracker), then a local British voice with a "voice in the walls" effect. A sci-fi HUD (adapted from A.L.I.C.E.) shows what it's doing, and there's a small round glass widget for the desktop.
 
 ## Setup on Windows
 
@@ -84,7 +84,6 @@ Voice mode opens the HUD in **its own window** (no browser needed; it uses Micro
 - **A clock and the date** in the centre while he's on standby.
 - **Meals** (top right): today's meals from the meal plan sheets, current meal highlighted, switching between plans every 12 seconds. Refreshed every 10 minutes and just after midnight.
 - **Timers** (left): your next two timers counting down.
-- **Digest** (bottom right): new mobile games news since the last digest, the top headlines.
 - **Calendar** (bottom left): what's left of today, or tomorrow once today's done, across all your calendars.
 
 **Hold the ring** with the mouse, or with a finger on a touchscreen, to talk. It works the same as holding F9.
@@ -165,7 +164,7 @@ Adding events needs one more Google permission, so after updating, sign the pers
 
 ## To-do list
 
-Your to-do list lives in **Google Tasks** on the personal account, so it's also in the Google Tasks app and Google Calendar on your phone. "Add to my list: pitch the cosy games feature, due Friday", "add order more pasta", "add file the review by 5pm Monday", "what's on my list?", "what's due this week?", "mark the pasta one as done", "move the pitch to Monday", "undo that", "delete the pitch".
+Your to-do list lives in **Google Tasks** on the personal account, so it's also in the Google Tasks app and Google Calendar on your phone. "Add to my list: book the dentist, due Friday", "add order more pasta", "add file the review by 5pm Monday", "what's on my list?", "what's due this week?", "mark the pasta one as done", "move the pitch to Monday", "undo that", "delete the pitch".
 
 - Adding, ticking off and moving happen straight away and are read back; **"undo that"** reverses the last one. **Deleting** asks first and needs your yes.
 - A deadline with a time also gets a spoken reminder an hour before (Google Tasks itself only keeps the date; the time is written in the task's notes).
@@ -192,19 +191,10 @@ Settings in `config.toml` under `[audio]`: `wake_word` (on/off) and `wake_thresh
 
 ## Meal plans
 
-Jarvis reads the dietitian's weekly plans from Google Sheets (read-only) through the personal account. Ask "what's my dinner today?", "what's Sam having for lunch tomorrow?" or "what's my breakfast on Monday?". He finds the date in whichever week tab holds it, so new weeks and renamed meals just work. Only that one day's meals go to the AI model; recipes, grocery lists and the tracker tabs are never read out. If a week hasn't been added yet, he says so.
+Jarvis reads weekly meal plans from a spreadsheet of meals (a Google Sheet, read-only; an Excel file can be uploaded to Google Sheets) through the personal account. Ask "what's my dinner today?", "what's Sam having for lunch tomorrow?" or "what's my breakfast on Monday?". He finds the date in whichever week tab holds it, so new weeks and renamed meals just work. Only that one day's meals go to the AI model; recipes, grocery lists and the tracker tabs are never read out. If a week hasn't been added yet, he says so.
 
 The plans are listed in `config.local.toml` under `[meal_plan.plans.<name>]` (sheet id, the Google account it's shared with, and who it's for). Settings are under `[meal_plan]` in `config.toml`; `hud_card = false` hides the HUD card.
 
-## Mobile games digest
-
-While Jarvis runs, he checks public feeds in the background: GamesPress (hourly; only items that mention iOS, Android or mobile), Pokémon GO's news page, Gamezebo, Droid Gamers and mobilegamer.biz (every few hours). Guides, codes and puzzle answers are skipped. You can also add a "reference" feed (`role = "covered"` in `config.toml`): it is read only to mark stories it has already covered, and those go to the end of the digest.
-
-- The first time you speak to him each day, he mentions how many new items there are and offers to run through them.
-- "What's new in mobile games?" or "give me the games digest" reads everything since the last digest. "Any Pokémon GO news this week?" or "anything about Monopoly Go today?" narrows it down.
-- What's been seen is kept in `data/games.json` for 30 days, so nothing is reported twice.
-
-Sources and intervals are under `[games.sources.*]` in `config.toml`; set `enabled = false` on one to drop it. GamesPress's feed only holds its latest 20 items (a few hours on a weekday), so items published while the laptop is off for longer are missed.
 
 ### Using Claude
 

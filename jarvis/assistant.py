@@ -48,7 +48,7 @@ class Assistant:
         self.cfg = cfg
         self.backend = backend
         self.tools = {t.spec.name: t for t in tools or []}
-        self.notes = list(notes or [])  # e.g. the games digest's once-a-day mention
+        self.notes = list(notes or [])  # e.g. a once-a-day mention
         # Fetched material that belongs at the start of a turn (the morning briefing), given to the model as the
         # result of a tool call, never in the system prompt: (tool name, result text), or None.
         self.preludes = list(preludes or [])
